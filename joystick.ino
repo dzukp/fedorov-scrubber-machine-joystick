@@ -1,12 +1,13 @@
 #include <Arduino.h>
 #include <Smooth.h>
 
+#define LOOP_PERIOD 10  //  период выполнения основного цикла мс
 #define SMOOTHED_SAMPLE_SIZE 1
+#define SMOOTHED_PWD_SAMPLE_PERIOD 100  // период за который измеряется среднее значение ШИМ 
 #define PULSE_LEN 1000  // длина импульса
 #define PULSE_PERIOD 5000  // период импульсов
 
-// Закоментарить, чтобы отключить печать в ком-порт
-#define ENABLE_PRINT
+#define ENABLE_PRINT  // Закоментарить, чтобы отключить печать в ком-порт
 
 // Пороги работы джойстика
 const int frwEdge = 600;
@@ -42,8 +43,8 @@ byte doAir = 4;
 byte doValve = 5;
 
 Smooth joystick(SMOOTHED_SAMPLE_SIZE);
-Smooth dr1(SMOOTHED_SAMPLE_SIZE);
-Smooth dr2(SMOOTHED_SAMPLE_SIZE);
+Smooth dr1(SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD);
+Smooth dr2(SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD);
 
 
 class Pulse {
@@ -153,8 +154,6 @@ class Machine {
     }
 
     void process() {
-      dr1_gyst.getState(dr1.get_avg());
-      dr2_gyst.getState(dr2.get_avg());
 
       switch (_command) {
         case 1: _forwardProcess(); break;
@@ -164,9 +163,6 @@ class Machine {
       }
       do_frw = _is_dr1_active();
       do_bcw = _is_dr2_active() && !do_frw;
-
-      print("DR1 state", _is_dr1_active());
-      print("DR2 state", _is_dr2_active());
     }
 
   private:
@@ -239,8 +235,8 @@ class Machine {
       }
     }
 
-    bool _is_dr1_active() { return dr1_gyst.getState(dr1.get_avg()); }
-    bool _is_dr2_active() { return dr2_gyst.getState(dr2.get_avg()); }
+    bool _is_dr1_active() { return dr1.get_avg() > 1; }
+    bool _is_dr2_active() { return dr2.get_avg() > 1; }
 
     int _command;
     bool _wrong_state;
@@ -283,12 +279,14 @@ void setup() {
 
 
 void loop() {
+
+  uint32_t start_loop_time = millis();
   
   joystick.add(analogRead(aiJoystick));
-  dr1.add(analogRead(aiDr1));
-  dr2.add(analogRead(aiDr2));
+  dr1.add(digitalRead(aiDr1) ? 100 : 0);
+  dr2.add(digitalRead(aiDr2) ? 100 : 0);
 
-  print("-----")
+  print("-----");
   print("Joyst", joystick.get_avg());
   print("DR1", dr1.get_avg());
   print("DR2", dr2.get_avg());
@@ -351,7 +349,8 @@ void loop() {
     print("accum is low");
   }
 
-  delay(10);
+  uint32_t delay_time = max(LOOP_PERIOD - millis() - start_loop_time, 0);
+  delay(delay_time);
 }
 
 void print(char* title, double value) {
