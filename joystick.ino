@@ -235,8 +235,8 @@ class Machine {
       }
     }
 
-    bool _is_dr1_active() { return dr1.get_avg() > 1; }
-    bool _is_dr2_active() { return dr2.get_avg() > 1; }
+    bool _is_dr1_active() { return dr1.get_avg() < 1; }
+    bool _is_dr2_active() { return dr2.get_avg() < 1; }
 
     int _command;
     bool _wrong_state;
