@@ -35,7 +35,7 @@ byte diAir = 11;
 byte diValve = 12;
 
 byte doForward = 9;
-byte doBackward = 10;
+byte doEngine = 10;
 byte doForwardPulse = 7;
 byte doBackwardPulse = 8;
 byte doBrush = 3;
@@ -267,7 +267,7 @@ void setup() {
   pinMode(diValve, INPUT);
 
   pinMode(doForward, OUTPUT);
-  pinMode(doBackward, OUTPUT);
+  pinMode(doEngine, OUTPUT);
   pinMode(doForwardPulse, OUTPUT);
   pinMode(doBackwardPulse, OUTPUT);
   pinMode(doBrush, OUTPUT);
@@ -326,11 +326,24 @@ void loop() {
 
     digitalWrite(doForwardPulse, machine.k1_frw.state() ? HIGH : LOW);
     digitalWrite(doBackwardPulse, machine.k2_bcw.state() ? HIGH : LOW);
+    
+    if (machine.do_frw) {
+      digitalWrite(doForward, HIGH);
+      digitalWrite(doEngine, HIGH);
+    }
+    else if (machine.do_bcw) {
+      digitalWrite(doForward, LOW);
+      digitalWrite(doEngine, HIGH);
+    }
+    else {
+      digitalWrite(doForward, LOW);
+      digitalWrite(doEngine, LOW);
+    }
     digitalWrite(doForward, machine.do_frw ? HIGH : LOW);
-    digitalWrite(doBackward, machine.do_bcw ? HIGH : LOW);
+    digitalWrite(doEngine, machine.do_bcw ? HIGH : LOW);
 
-    print("K1", machine.k1_frw.state());
-    print("K2", machine.k2_bcw.state());
+    print("FRW", machine.do_frw);
+    print("BCW", machine.do_bcw);
 
   }
   else {
@@ -344,7 +357,7 @@ void loop() {
     digitalWrite(doForwardPulse, LOW);
     digitalWrite(doBackwardPulse, LOW);
     digitalWrite(doForward, LOW);
-    digitalWrite(doBackward, LOW);
+    digitalWrite(doEngine, LOW);
 
     print("accum is low");
   }
