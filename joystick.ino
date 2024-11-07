@@ -363,8 +363,13 @@ void loop() {
     print("accum is low");
   }
 
-  uint32_t delay_time = max(LOOP_PERIOD - millis() - start_loop_time, 0);
-  delay(delay_time);
+  // uint32_t delay_time = max(LOOP_PERIOD - (millis() - start_loop_time), 0);
+  uint32_t loop_time = millis() - start_loop_time;
+  print("loop_time", loop_time);
+  if (LOOP_PERIOD > loop_time) {
+    print("delay", LOOP_PERIOD - loop_time);
+    delay(LOOP_PERIOD - loop_time);
+  }
 }
 
 void print(char* title, double value) {
@@ -376,6 +381,14 @@ void print(char* title, double value) {
 }
 
 void print(char* title, int value) {
+#ifdef ENABLE_PRINT
+  Serial.print(title);
+  Serial.print(": ");
+  Serial.println(value);
+#endif
+}
+
+void print(char* title, uint32_t value) {
 #ifdef ENABLE_PRINT
   Serial.print(title);
   Serial.print(": ");
