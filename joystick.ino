@@ -155,6 +155,9 @@ class Machine {
 
     void process() {
 
+      print("DR1 is active", _is_dr1_active());
+      print("DR2 is active", _is_dr2_active());
+
       switch (_command) {
         case 1: _forwardProcess(); break;
         case -1: _backwardProcess(); break;
@@ -241,9 +244,6 @@ class Machine {
     int _command;
     bool _wrong_state;
 
-    Gisteresys dr1_gyst;
-    Gisteresys dr2_gyst;
-
   public:
     Pulse k1_frw;
     Pulse k2_bcw;
@@ -286,16 +286,17 @@ void loop() {
   dr1.add(digitalRead(aiDr1) ? 100 : 0);
   dr2.add(digitalRead(aiDr2) ? 100 : 0);
 
-  print("-----");
-  print("Joyst", joystick.get_avg());
-  print("DR1", dr1.get_avg());
-  print("DR2", dr2.get_avg());
-
   bool accum = digitalRead(diAccum);
   bool joystickSwitch = digitalRead(diJoystickSwitch);
   bool brush = digitalRead(diBrush);
   bool air = digitalRead(diAir);
   bool valve = digitalRead(diValve);
+
+  print("-----");
+  print("Joyst", joystick.get_avg());
+  print("Switch", joystickSwitch);
+  print("DR1", dr1.get_avg());
+  print("DR2", dr2.get_avg());
 
   int cmdMove = 0;
   if (joystick.get_avg() > frwEdge && joystickSwitch && accum) {
