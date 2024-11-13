@@ -13,13 +13,6 @@
 const int frwEdge = 600;
 const int bcwEdge = 130;
 
-// Пороги работы DR, 
-// если меньше drLoEdge, то меняем сотояние на выкл
-// если больше drHiEdge, то меняем состояние на вкл
-// если между, то состояние не меняется
-const int drLoEdge = 100;
-const int drHiEdge = 1000;
-
 void print(char* title, double value);
 void print(char* title, int value);
 void print(char* title, bool value);
@@ -93,33 +86,6 @@ class Pulse {
   private:
     uint32_t _end_time;
     int _state;
-};
-
-
-class Gisteresys {
-  /*
-  Класс гистерезиса, в зависисмости от значения аналогово сигнала меняем состояние
-  если значение меньше _loEdge, то выкл
-  если значение больше _hiEdge, то вкл
-  если значение между _loEdge и _hiEdge, то остается неизменным
-  */
-  public:
-    Gisteresys() : _state(false), _loEdge(drLoEdge), _hiEdge(drHiEdge) {}
-
-    bool getState(double value) {
-      if (_state && value < _loEdge) {
-        _state = false;
-      }
-      if (!_state && value > _hiEdge) {
-          _state = true;
-      }
-      return _state;
-    }
-
-  private:
-    bool _state;
-    int _loEdge;
-    int _hiEdge;
 };
 
 
@@ -327,24 +293,25 @@ void loop() {
 
     digitalWrite(doForwardPulse, machine.k1_frw.state() ? HIGH : LOW);
     digitalWrite(doBackwardPulse, machine.k2_bcw.state() ? HIGH : LOW);
+
+    print("DR1 pulse",  machine.k1_frw.state());
+    print("DR2 pulse",  machine.k2_bcw.state());
     
     if (machine.do_frw) {
       digitalWrite(doForward, HIGH);
       digitalWrite(doEngine, HIGH);
+      print("FRW 1 ENG 1");
     }
     else if (machine.do_bcw) {
       digitalWrite(doForward, LOW);
       digitalWrite(doEngine, HIGH);
+      print("FRW 0 ENG 1");
     }
     else {
       digitalWrite(doForward, LOW);
       digitalWrite(doEngine, LOW);
+      print("FRW 0 ENG 0");
     }
-    digitalWrite(doForward, machine.do_frw ? HIGH : LOW);
-    digitalWrite(doEngine, machine.do_bcw ? HIGH : LOW);
-
-    print("FRW", machine.do_frw);
-    print("BCW", machine.do_bcw);
 
   }
   else {
