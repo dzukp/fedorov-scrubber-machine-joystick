@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Smooth.h>
 
-#define LOOP_PERIOD 10  //  период выполнения основного цикла мс
+#define LOOP_PERIOD 100  //  период выполнения основного цикла мс
 #define SMOOTHED_SAMPLE_SIZE 1
 #define SMOOTHED_PWD_SAMPLE_PERIOD 100  // период за который измеряется среднее значение ШИМ 
 #define PULSE_LEN 1000  // длина импульса
@@ -41,10 +41,16 @@ Smooth dr2(SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD);
 
 
 class Pulse {
+  /*
+  Класс для генерации импульса
+  */
   public:
     Pulse() : _state(0) {}
 
     void start(int time=PULSE_LEN, int period=PULSE_PERIOD) {
+      /*
+      ф-ция генерирует импульсы длиной time и периодом period
+      */
       switch (_state) {
         case 0:
           _end_time = millis() + time;
@@ -73,6 +79,7 @@ class Pulse {
     }
 
     void stop() {
+      /* ф-ция останавливает генерацию импульсов */
       _state = 0;
     }
 
@@ -81,7 +88,10 @@ class Pulse {
       start();
     }
 
-    bool state() { return _state == 1; }
+    bool state() { 
+      /* Возвращает состояние, true - верхний уровень, false - нижний уровень  */
+      return _state == 1; 
+    }
 
   private:
     uint32_t _end_time;
@@ -124,88 +134,133 @@ class Machine {
       print("DR1 is active", _is_dr1_active());
       print("DR2 is active", _is_dr2_active());
 
+      /*
+      Выбираем действие исходя из команды
+      1 - вперёд
+      -1 - назад
+      0 - стоп
+      */
       switch (_command) {
-        case 1: _forwardProcess(); break;
-        case -1: _backwardProcess(); break;
-        case 0: _stopProcess(); break;
+        
+        case 1: _forwardProcess(); break; // вперёд
+        case -1: _backwardProcess(); break; // назад
+        case 0: _stopProcess(); break; // стоп
         default: print("machine bad command", _command); break;
       }
-      do_frw = _is_dr1_active();
+      // Если драйвер движения вперёд включен, 
+      // то хотим скомутировать реле для движения вперёд
+      do_frw = _is_dr1_active();      
+      // Если драйвер движения назад включен и не хотим скомутировать реле для движения вперёд, 
+      // то хотим скомутировать реле для движения назад
       do_bcw = _is_dr2_active() && !do_frw;
     }
 
   private:
     void _forwardProcess() {
+      // Была команда ехать вперёд
       if (!_is_dr2_active() && !_is_dr1_active()) {
+        // оба драйвера выключены - шлем импульс вперёд
         k1_frw.start();
         k2_bcw.stop();
         print("frw 1 0");
       }
       else if (_is_dr2_active() && !_is_dr1_active()) {
-        k1_frw.stop();
+        // драйвер назад включен, вперёд выключен - шлём импульсы назад и вперёд
+        // чтобы выключить драйвер движения назад и включить драйвер вперёд
+        k1_frw.start();
         k2_bcw.start();
-        print("frw 0 1");
+        print("frw 1 1");
       }
       else if (!_is_dr2_active() && _is_dr1_active()) {
+        // драйвер назад выключен, вперёд включен - всё как надо, импульсы не шлём
         k1_frw.stop();
         k2_bcw.stop();
         print("frw 0 0");
       }
       else if(_is_dr2_active() && _is_dr1_active()) {
-        k1_frw.start();
+        // оба драйвера включены - шлём импульс назад, 
+        // чтобы выключить драйвер движения назад
+        k1_frw.stop();
         k2_bcw.start();
-        print("frw 1 1");
+        print("frw 0 1");
       }
     }
 
     void _backwardProcess() {
+      // команда ехать назад
       if (!_is_dr2_active() && !_is_dr1_active()) {
+        // оба драйвера выключены - шлем импульс назад
         k1_frw.stop();
         k2_bcw.start();
         print("bcw 0 1");
       }
       else if (_is_dr2_active() && !_is_dr1_active()) {
+        // драйвер назад включен, вперёд выключен - всё как надо, импульсы не шлём
         k1_frw.stop();
         k2_bcw.stop();
         print("bcw 0 0");
       }
       else if (!_is_dr2_active() && _is_dr1_active()) {
-        k1_frw.start();
-        k2_bcw.stop();
-        print("bcw 1 0");
-      }
-      else if(_is_dr2_active() && _is_dr1_active()) {
+        // драйвер назад выключен, вперёд включен - шлём импульсы назад и вперёд
+        // чтобы включить драйвер движения назад и выключить драйвер вперёд
         k1_frw.start();
         k2_bcw.start();
         print("bcw 1 1");
       }
+      else if(_is_dr2_active() && _is_dr1_active()) {
+        // оба драйвера включены - шлем импульс вперёд,
+        // чтобы выключить драйвер движения вперёд
+        k1_frw.start();
+        k2_bcw.stop();
+        print("bcw 1 0");
+      }
     }
 
     void _stopProcess() {
+      // команда стоять
       if (!_is_dr2_active() && !_is_dr1_active()) {
+        // оба драйвера выключены - всё как надо, импульсы не шлём
         k1_frw.stop();
         k2_bcw.stop();
         print("stop 0 0");
       }
       else if (_is_dr2_active() && !_is_dr1_active()) {
+        // драйвер назад включен, вперёд выключен - шлём импульс назад
         k1_frw.stop();
         k2_bcw.start();
         print("stop 0 1");
       }
       else if (!_is_dr2_active() && _is_dr1_active()) {
+        // драйвер вперёд включен, назад выключен - шлём импульс вперёд
         k1_frw.start();
         k2_bcw.stop();
         print("stop 1 0");
       }
       else if(_is_dr2_active() && _is_dr1_active()) {
+        // оба драйвера включены - шлем импульс вперёд и назад,
+        // чтобы выключить оба драйвера
         k1_frw.start();
         k2_bcw.start();
         print("stop 1 1");
       }
     }
 
-    bool _is_dr1_active() { return dr1.get_avg() < 1; }
-    bool _is_dr2_active() { return dr2.get_avg() < 1; }
+    bool _is_dr1_active() { 
+      /*
+      Анализиируем состояние драйвера вперёд
+      true - включен
+      false - выключен
+      */
+      return dr1.get_avg() < 1; 
+    }
+    bool _is_dr2_active() { 
+      /*
+      Анализиируем состояние драйвера назад
+      true - включен
+      false - выключен
+      */
+      return dr2.get_avg() < 1; 
+    }
 
     int _command;
     bool _wrong_state;
@@ -246,6 +301,7 @@ void setup() {
 
 void loop() {
 
+  // запоминаем текущее время, чтобы измерить время цикла
   uint32_t start_loop_time = millis();
   
   joystick.add(analogRead(aiJoystick));
@@ -266,48 +322,61 @@ void loop() {
 
   int cmdMove = 0;
   if (joystick.get_avg() > frwEdge && joystickSwitch && accum) {
+    // Значение джойстика выше порога, свитч сработал, аккумулятор в норме - команда вперёд
     cmdMove = 1;
   }
   else if (joystick.get_avg() < bcwEdge && joystickSwitch && accum) {
+    // Значение джойстика ниже порога, свитч сработал, аккумулятор в норме - команда назад
     cmdMove = -1;
   }
 
   if (accum) {
+    // Аккумулятор в норме
     digitalWrite(doBrush, brush ? HIGH : LOW);
     digitalWrite(doAir, air ? HIGH : LOW);
     digitalWrite(doValve, valve ? HIGH : LOW);
 
+    // Логика работы machine описана в классе Machine
     if (cmdMove == 1) {
+      // команада вперёд для объекта machine
       machine.forward();
     }
     else if (cmdMove == -1) {
+      // команада назад для объекта machine
       machine.backward();
     }
     else {
+      // команада стоп для объекта machine
       machine.stop();
     }
 
     print("machive cmd", cmdMove);
 
+    // Вызываем главную ф-цию логики машины
     machine.process();
 
+    // получаем из машины команду для драйвера вперёд и передаём её на соотв выход
     digitalWrite(doForwardPulse, machine.k1_frw.state() ? HIGH : LOW);
+    // получаем из машины команду для драйвера назад и передаём её на соотв выход
     digitalWrite(doBackwardPulse, machine.k2_bcw.state() ? HIGH : LOW);
 
     print("DR1 pulse",  machine.k1_frw.state());
     print("DR2 pulse",  machine.k2_bcw.state());
     
     if (machine.do_frw) {
+      // коммутируем реле, чтобы подключить драйвер вперёд
       digitalWrite(doForward, HIGH);
       digitalWrite(doEngine, HIGH);
       print("FRW 1 ENG 1");
     }
     else if (machine.do_bcw) {
+      // коммутируем реле, чтобы подключить драйвер назад
       digitalWrite(doForward, LOW);
       digitalWrite(doEngine, HIGH);
       print("FRW 0 ENG 1");
     }
     else {
+      // коммутируем реле, чтобы отключить оба драйвера
       digitalWrite(doForward, LOW);
       digitalWrite(doEngine, LOW);
       print("FRW 0 ENG 0");
@@ -315,6 +384,7 @@ void loop() {
 
   }
   else {
+    // Аккумулятор сел, всё останавливаем
     digitalWrite(doBrush, LOW);
     digitalWrite(doAir, LOW);
     digitalWrite(doValve, LOW);
@@ -330,10 +400,11 @@ void loop() {
     print("accum is low");
   }
 
-  // uint32_t delay_time = max(LOOP_PERIOD - (millis() - start_loop_time), 0);
+  // вычисляем время цикла
   uint32_t loop_time = millis() - start_loop_time;
   print("loop_time", loop_time);
   if (LOOP_PERIOD > loop_time) {
+    // если время цикла короткое, то делаем паузу
     print("delay", LOOP_PERIOD - loop_time);
     delay(LOOP_PERIOD - loop_time);
   }
