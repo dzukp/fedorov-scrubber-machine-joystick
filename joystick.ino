@@ -410,40 +410,34 @@ void loop() {
   }
 }
 
-void print(char* title, double value) {
+void print(const char* title, double value) {
 #ifdef ENABLE_PRINT
-  Serial.print(title);
-  Serial.print(": ");
-  Serial.println(value);
+  char output[64];
+  sprintf(output, "%s: %.2f", title, value);
+  Serial.println(output);
 #endif
 }
 
-void print(char* title, int value) {
+void print(const char* title, int value) {
 #ifdef ENABLE_PRINT
-  Serial.print(title);
-  Serial.print(": ");
-  Serial.println(value);
+  char output[64];
+  sprintf(output, "%s: %d", title, value);
+  Serial.println(output);
 #endif
 }
 
-void print(char* title, uint32_t value) {
+void print(const char* title, bool value) {
 #ifdef ENABLE_PRINT
-  Serial.print(title);
-  Serial.print(": ");
-  Serial.println(value);
+  char output[64];
+  sprintf(output, "%s: %d", title, value ? 1 : 0);
+  Serial.println(output);
 #endif
 }
 
-void print(char* title, bool value) {
+void print(const char* text) {
 #ifdef ENABLE_PRINT
-  Serial.print(title);
-  Serial.print(": ");
-  Serial.println(value ? 1 : 0);
-#endif
-}
-
-void print(char* text) {
-#ifdef ENABLE_PRINT
-  Serial.println(text);
+  char output[64];
+  snprintf(output, sizeof(output), "%s", text);
+  Serial.println(output);
 #endif
 }
