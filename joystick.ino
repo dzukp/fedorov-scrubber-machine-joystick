@@ -13,10 +13,11 @@
 const int frwEdge = 600;
 const int bcwEdge = 130;
 
-void print(char* title, double value);
-void print(char* title, int value);
-void print(char* title, bool value);
-void print(char* text);
+void print(const char* title, double value);
+void print(const char* title, int value);
+void print(const char* title, uint32_t value);
+void print(const char* title, bool value);
+void print(const char* text);
 
 byte diJoystickSwitch = 2;
 byte aiJoystick = A3;
@@ -28,7 +29,7 @@ byte diAir = 11;
 byte diValve = 12;
 
 byte doForward = 9;
-byte doEngine = 10;
+byte doBackward = 10;
 byte doForwardPulse = 7;
 byte doBackwardPulse = 8;
 byte doBrush = 3;
@@ -288,7 +289,7 @@ void setup() {
   pinMode(diValve, INPUT);
 
   pinMode(doForward, OUTPUT);
-  pinMode(doEngine, OUTPUT);
+  pinMode(doBackward, OUTPUT);
   pinMode(doForwardPulse, OUTPUT);
   pinMode(doBackwardPulse, OUTPUT);
   pinMode(doBrush, OUTPUT);
@@ -366,20 +367,20 @@ void loop() {
     if (machine.do_frw) {
       // коммутируем реле, чтобы подключить драйвер вперёд
       digitalWrite(doForward, HIGH);
-      digitalWrite(doEngine, HIGH);
-      print("FRW 1 ENG 1");
+      digitalWrite(doBackward, LOW);
+      print("FRW 1 BCK 0");
     }
     else if (machine.do_bcw) {
       // коммутируем реле, чтобы подключить драйвер назад
       digitalWrite(doForward, LOW);
-      digitalWrite(doEngine, HIGH);
-      print("FRW 0 ENG 1");
+      digitalWrite(doBackward, HIGH);
+      print("FRW 0 BCK 1");
     }
     else {
       // коммутируем реле, чтобы отключить оба драйвера
       digitalWrite(doForward, LOW);
-      digitalWrite(doEngine, LOW);
-      print("FRW 0 ENG 0");
+      digitalWrite(doBackward, LOW);
+      print("FRW 0 BCK 0");
     }
 
   }
@@ -395,7 +396,7 @@ void loop() {
     digitalWrite(doForwardPulse, LOW);
     digitalWrite(doBackwardPulse, LOW);
     digitalWrite(doForward, LOW);
-    digitalWrite(doEngine, LOW);
+    digitalWrite(doBackward, LOW);
 
     print("accum is low");
   }
@@ -422,6 +423,14 @@ void print(const char* title, int value) {
 #ifdef ENABLE_PRINT
   char output[64];
   sprintf(output, "%s: %d", title, value);
+  Serial.println(output);
+#endif
+}
+
+void print(const char* title, uint32_t value) {
+#ifdef ENABLE_PRINT
+  char output[64];
+  sprintf(output, "%s: %u", title, value);
   Serial.println(output);
 #endif
 }
