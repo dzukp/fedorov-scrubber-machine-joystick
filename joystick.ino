@@ -1,11 +1,16 @@
 #include <Arduino.h>
 #include <Smooth.h>
 
-#define LOOP_PERIOD 100  //  период выполнения основного цикла мс
-#define SMOOTHED_SAMPLE_SIZE 1
-#define SMOOTHED_PWD_SAMPLE_PERIOD 100  // период за который измеряется среднее значение ШИМ 
-#define PULSE_LEN 1000  // длина импульса
-#define PULSE_PERIOD 5000  // период импульсов
+#define LOOP_PERIOD 20  //  период выполнения основного цикла мс
+#define SMOOTHED_SAMPLE_SIZE 1 // кол-во значений для усреднения значения джойстика
+#define SMOOTHED_PWD_SAMPLE_PERIOD 100  // период за который измеряется среднее значение ШИМ драйверов
+#define PULSE_LEN 200  // длина импульса
+#define PULSE_PERIOD 1000  // период импульсов
+// среднее значение обратной связи (0-100) драйвера DR1, DR2. 
+// Если усреднённое значение меньше, то считаем включенным.
+// Среднее значение 0-100, кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
+// значение DR_ACTIVE_EDGE лучше устанавливать, чтобы не было кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
+#define DR_ACTIVE_EDGE 30  
 
 #define ENABLE_PRINT  // Закоментарить, чтобы отключить печать в ком-порт
 
@@ -148,12 +153,14 @@ class Machine {
         case 0: _stopProcess(); break; // стоп
         default: print("machine bad command", _command); break;
       }
-      // Если драйвер движения вперёд включен, 
+      dr1_active = _is_dr1_active();
+      dr2_active = _is_dr2_active();
+      // Если драйвер движения вперёд включен, а драйвер движения назад выключен,
       // то хотим скомутировать реле для движения вперёд
-      do_frw = _is_dr1_active();      
-      // Если драйвер движения назад включен и не хотим скомутировать реле для движения вперёд, 
+      do_frw = dr1_active && !dr2_active && _command == 1;
+      // Если драйвер движения назад включен, а драйвер движения вперёд выключен, 
       // то хотим скомутировать реле для движения назад
-      do_bcw = _is_dr2_active() && !do_frw;
+      do_bcw = !dr1_active && dr2_active && _command == -1;
     }
 
   private:
@@ -252,7 +259,7 @@ class Machine {
       true - включен
       false - выключен
       */
-      return dr1.get_avg() < 1; 
+      return dr1.get_avg() < DR_ACTIVE_EDGE; 
     }
     bool _is_dr2_active() { 
       /*
@@ -260,7 +267,7 @@ class Machine {
       true - включен
       false - выключен
       */
-      return dr2.get_avg() < 1; 
+      return dr2.get_avg() < DR_ACTIVE_EDGE; 
     }
 
     int _command;
@@ -306,8 +313,8 @@ void loop() {
   uint32_t start_loop_time = millis();
   
   joystick.add(analogRead(aiJoystick));
-  dr1.add(digitalRead(aiDr1) ? 100 : 0);
-  dr2.add(digitalRead(aiDr2) ? 100 : 0);
+  dr1.add(digitalRead(aiDr1) ? 100.0 : 0.0);
+  dr2.add(digitalRead(aiDr2) ? 100.0 : 0.0);
 
   bool accum = digitalRead(diAccum);
   bool joystickSwitch = digitalRead(diJoystickSwitch);
@@ -414,8 +421,9 @@ void loop() {
 void print(const char* title, double value) {
 #ifdef ENABLE_PRINT
   char output[64];
-  sprintf(output, "%s: %.2f", title, value);
-  Serial.println(output);
+  sprintf(output, "%s: ", title);
+  Serial.print(output);
+  Serial.println(value);
 #endif
 }
 
