@@ -153,8 +153,8 @@ class Machine {
         case 0: _stopProcess(); break; // стоп
         default: print("machine bad command", _command); break;
       }
-      dr1_active = _is_dr1_active();
-      dr2_active = _is_dr2_active();
+      bool dr1_active = _is_dr1_active();
+      bool dr2_active = _is_dr2_active();
       // Если драйвер движения вперёд включен, а драйвер движения назад выключен,
       // то хотим скомутировать реле для движения вперёд
       do_frw = dr1_active && !dr2_active && _command == 1;
