@@ -203,8 +203,9 @@ void loop() {
   bool air = digitalRead(diAir);
   bool valve = digitalRead(diValve);
 
-  print("-----");
-  print("Joyst", joystick.get_avg());
+  print("-----", start_loop_time);
+  print("Joyst avg", joystick.get_avg());
+  print("Joyst cur", analogRead(aiJoystick));
   print("Switch", joystickSwitch);
   print("DR1", drv1.getStateValue());
   print("DR2", drv2.getStateValue());
