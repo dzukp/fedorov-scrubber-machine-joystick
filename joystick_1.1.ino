@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <Smooth.h>
 
-#define LOOP_PERIOD 20  //  период выполнения основного цикла мс
-#define SMOOTHED_SAMPLE_SIZE 1 // кол-во значений для усреднения значения джойстика
+#define LOOP_PERIOD 50  //  период выполнения основного цикла мс
+#define SMOOTHED_SAMPLE_SIZE 3 // кол-во значений для усреднения значения джойстика
 #define SMOOTHED_PWD_SAMPLE_PERIOD 100  // период за который измеряется среднее значение ШИМ драйверов
 #define PULSE_LEN 200  // длина импульса
 #define PULSE_PERIOD 1000  // период импульсов
