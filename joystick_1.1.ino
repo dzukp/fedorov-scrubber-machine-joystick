@@ -3,20 +3,20 @@
 
 #define LOOP_PERIOD 50  //  период выполнения основного цикла мс
 #define SMOOTHED_SAMPLE_SIZE 3 // кол-во значений для усреднения значения джойстика
-#define SMOOTHED_PWD_SAMPLE_PERIOD 100  // период за который измеряется среднее значение ШИМ драйверов
-#define PULSE_LEN 200  // длина импульса
-#define PULSE_PERIOD 1000  // период импульсов
+#define SMOOTHED_PWD_SAMPLE_PERIOD 200  // период за который измеряется среднее значение ШИМ драйверов
+#define PULSE_LEN 100  // длина импульса
+#define PULSE_PERIOD 3000  // период импульсов
 // среднее значение обратной связи (0-100) драйвера DR1, DR2. 
 // Если усреднённое значение меньше, то считаем включенным.
 // Среднее значение 0-100, кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
 // значение DR_ACTIVE_EDGE лучше устанавливать, чтобы не было кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
-#define DR_ACTIVE_EDGE 30  
+#define DR_ACTIVE_EDGE 50
 
 #define ENABLE_PRINT  // Закоментарить, чтобы отключить печать в ком-порт
 
 // Пороги работы джойстика
-const int frwEdge = 600;
-const int bcwEdge = 130;
+const int frwEdge = 550;
+const int bcwEdge = 250;
 
 void print(const char* title, double value);
 void print(const char* title, int value);
@@ -26,7 +26,7 @@ void print(const char* title, const char* value);
 void print(const char* text);
 
 byte diJoystickSwitch = 2;
-byte aiJoystick = A3;
+byte aiJoystick = A2;
 byte aiDr1 = A0;
 byte aiDr2 = A1;
 byte diAccum = 13;
@@ -34,8 +34,8 @@ byte diBrush = 6;
 byte diAir = 11;
 byte diValve = 12;
 
-byte doForward = 9;
-byte doBackward = 10;
+byte doForward = 10;
+byte doBackward = 9;
 byte doForwardPulse = 7;
 byte doBackwardPulse = 8;
 byte doBrush = 3;
@@ -95,7 +95,7 @@ class Pulse {
       start();
     }
 
-    bool state() { 
+    bool state() const { 
       /* Возвращает состояние, true - верхний уровень, false - нижний уровень  */
       return _state == 1; 
     }
