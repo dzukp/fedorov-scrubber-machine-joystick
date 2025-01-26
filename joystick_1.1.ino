@@ -5,12 +5,13 @@
 #define SMOOTHED_SAMPLE_SIZE 3 // кол-во значений для усреднения значения джойстика
 #define SMOOTHED_PWD_SAMPLE_PERIOD 200  // период за который измеряется среднее значение ШИМ драйверов
 #define PULSE_LEN 100  // длина импульса
-#define PULSE_PERIOD 3000  // период импульсов
+#define PULSE_PERIOD 2000  // период импульсов
 // среднее значение обратной связи (0-100) драйвера DR1, DR2. 
 // Если усреднённое значение меньше, то считаем включенным.
 // Среднее значение 0-100, кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
 // значение DR_ACTIVE_EDGE лучше устанавливать, чтобы не было кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
 #define DR_ACTIVE_EDGE 50
+#define START_STOP_PAUSE 2000  // Время перехода из движения вперёд в движение назад и наоборот
 
 #define ENABLE_PRINT  // Закоментарить, чтобы отключить печать в ком-порт
 
@@ -25,26 +26,49 @@ void print(const char* title, bool value);
 void print(const char* title, const char* value);
 void print(const char* text);
 
-byte diJoystickSwitch = 2;
-byte aiJoystick = A2;
-byte aiDr1 = A0;
-byte aiDr2 = A1;
-byte diAccum = 13;
-byte diBrush = 6;
-byte diAir = 11;
-byte diValve = 12;
 
-byte doForward = 10;
-byte doBackward = 9;
-byte doForwardPulse = 7;
-byte doBackwardPulse = 8;
-byte doBrush = 3;
-byte doAir = 4;
-byte doValve = 5;
+class MovingAverage {
+  /*
+  Класс скользящего среднего
+  */
+private:
+  int* values;
+  int windowSize; 
+  int currentSize;
+  int index;
+  long sum;
 
-Smooth joystick(SMOOTHED_SAMPLE_SIZE);
-Smooth dr1(SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD);
-Smooth dr2(SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD);
+public:
+  MovingAverage(int size) {
+    windowSize = size;
+    values = new int[windowSize];
+    currentSize = 0;
+    index = 0;
+    sum = 0;
+  }
+
+  ~MovingAverage() {
+    delete[] values;
+  }
+
+  void add(int value) {
+    if (currentSize == windowSize) {
+      sum -= values[index];
+    } else {
+      currentSize++;
+    }
+
+    values[index] = value;
+    sum += value;
+
+    index = (index + 1) % windowSize;
+  }
+
+  float get_avg() const {
+    if (currentSize == 0) return 0;
+    return (float)sum / currentSize;
+  }
+};
 
 
 class Pulse {
@@ -142,8 +166,14 @@ class Driver {
       }
     }
 
-    void start() {desiredState = true;}
-    void stop() {desiredState = false;}
+    void start() {
+      desiredState = true;
+    }
+
+    void stop() {
+      desiredState = false;
+    }
+
     void updateStateValue(float value) {state.add(value);}
     bool getRelayState() const {return relay;}
     bool getPulseState() const {return pulse.state();}
@@ -156,14 +186,134 @@ class Driver {
 
     const char* name;
     Pulse pulse;
-    Smooth state;
+    MovingAverage state;
     bool relay;
     bool desiredState;
 };
 
 
+class Machine {
+  /*
+  Класс управления машиной,
+  принимает команду
+  forward() - вперед
+  stop() - стоять
+  backward() - назад
+  Оценивает состояния DR и управляет драйвером и реле
+  */
+  public:
+    Machine(Driver* frw, Driver* bck) : 
+      _command(0),
+      lastForwardMove(0),
+      lastBackwardMove(0),
+      recentBackwardMove(false),
+      recentForwardMove(false),
+      drvForward(frw),
+      drvBackward(bck)
+    {}
+
+    void forward() {
+      if (_command != 1) {
+        _command = 1;
+      }
+    }
+
+    void backward() {
+      if (_command != -1) {
+        _command = -1;
+      }
+    }
+
+    void stop() {
+      if (_command != 0) {
+        _command = 0;
+      }
+    }
+
+    void process() {
+      /*
+      Выбираем действие исходя из команды
+      1 - вперёд
+      -1 - назад
+      0 - стоп
+      */
+      recentBackwardMove = (millis() - lastBackwardMove) < START_STOP_PAUSE;
+      recentForwardMove = (millis() - lastForwardMove) < START_STOP_PAUSE;
+
+      switch (_command) {
+        case 1: _forwardProcess(); break; // вперёд
+        case -1: _backwardProcess(); break; // назад
+        case 0: _stopProcess(); break; // стоп
+        default: 
+          print("machine bad command", _command); 
+          _command = 0; 
+          break;
+      }
+    }
+
+  private:
+    void _forwardProcess() {
+      drvBackward->stop();
+      if (recentBackwardMove) {
+        drvForward->stop();
+        print("pause for bcw");
+      }
+      else {
+        drvForward->start();
+        lastForwardMove = millis();
+      }
+    }
+
+    void _backwardProcess() {
+      drvForward->stop();
+      if (recentBackwardMove) {
+        drvBackward->stop();
+        print("pause for frw");
+      }
+      else {
+        drvBackward->start();
+        lastBackwardMove = millis();
+      }
+    }
+
+    void _stopProcess() {
+      // команда стоять
+      drvForward->stop();
+      drvBackward->stop();
+    }
+
+    bool recentForwardMove;
+    bool recentBackwardMove;
+    uint32_t lastForwardMove;
+    uint32_t lastBackwardMove;
+    int _command;
+    Driver* drvForward;
+    Driver* drvBackward;
+};
+
+
+byte diJoystickSwitch = 2;
+byte aiJoystick = A2;
+byte aiDr1 = A0;
+byte aiDr2 = A1;
+byte diAccum = 13;
+byte diBrush = 6;
+byte diAir = 11;
+byte diValve = 12;
+
+byte doForward = 10;
+byte doBackward = 9;
+byte doForwardPulse = 7;
+byte doBackwardPulse = 8;
+byte doBrush = 3;
+byte doAir = 4;
+byte doValve = 5;
+
+
+Smooth joystick(SMOOTHED_SAMPLE_SIZE);
 Driver drv1("frw_drw");
 Driver drv2("bcw_drw");
+Machine machine(&drv1, &drv2);
 
 
 void setup() {
@@ -228,17 +378,18 @@ void loop() {
 
     print("cmd", cmdMove);
 
+    // Логика работы machine описана в классе Machine
     if (cmdMove == 1) {
-      drv1.start();
-      drv2.stop();
+      // команада вперёд для объекта machine
+      machine.forward();
     }
     else if (cmdMove == -1) {
-      drv1.stop();
-      drv2.start();
+      // команада назад для объекта machine
+      machine.backward();
     }
     else {
-      drv1.stop();
-      drv2.stop();
+      // команада стоп для объекта machine
+      machine.stop();
     }
 
     drv1.process();
