@@ -5,7 +5,7 @@
 #define SMOOTHED_SAMPLE_SIZE 3 // кол-во значений для усреднения значения джойстика
 #define SMOOTHED_PWD_SAMPLE_PERIOD 200  // период за который измеряется среднее значение ШИМ драйверов
 #define PULSE_LEN 100  // длина импульса
-#define PULSE_PERIOD 2000  // период импульсов
+#define PULSE_PERIOD 1500  // период импульсов
 // среднее значение обратной связи (0-100) драйвера DR1, DR2. 
 // Если усреднённое значение меньше, то считаем включенным.
 // Среднее значение 0-100, кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
@@ -266,7 +266,7 @@ class Machine {
 
     void _backwardProcess() {
       drvForward->stop();
-      if (recentBackwardMove) {
+      if (recentForwardMove) {
         drvBackward->stop();
         print("pause for frw");
       }
@@ -391,6 +391,8 @@ void loop() {
       // команада стоп для объекта machine
       machine.stop();
     }
+
+    machine.process();
 
     drv1.process();
     drv2.process();
