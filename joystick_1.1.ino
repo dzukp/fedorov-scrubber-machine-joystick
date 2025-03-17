@@ -12,6 +12,7 @@
 // значение DR_ACTIVE_EDGE лучше устанавливать, чтобы не было кратно (SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD)
 #define DR_ACTIVE_EDGE 50
 #define START_STOP_PAUSE 2000  // Время перехода из движения вперёд в движение назад и наоборот
+#define BRAKING_TIME 2000  // Время торможения, это время не отключается реле
 
 #define ENABLE_PRINT  // Закоментарить, чтобы отключить печать в ком-порт
 
@@ -136,10 +137,11 @@ class Driver {
       desiredState(false), 
       relay(false), 
       state(SMOOTHED_PWD_SAMPLE_PERIOD / LOOP_PERIOD),
-      name(_name) 
+      name(_name),
+      lastRunState(0) 
     {}
 
-    void process() {
+    void process() {      
       if (desiredState) {
         // желаемое состояние работа
         if (relay && !_is_active()) {
@@ -149,14 +151,22 @@ class Driver {
         else {
           relay = true;
           pulse.stop();
+          lastRunState = millis();
           print(name, 0);
         }
       }
       else {
+        bool recentRunState = (millis() - lastRunState) < BRAKING_TIME;
         // желаемое состояние стоп
         if (relay && _is_active()) {
           pulse.start();
           print(name, 1);
+        }
+        // не отключаем реле, чтобы тормозить двигателем
+        else if (relay && recentRunState) {
+          pulse.stop();
+          print(name, "braking");
+          print(name, 0);  
         }
         else {
           relay = false;
@@ -189,6 +199,7 @@ class Driver {
     MovingAverage state;
     bool relay;
     bool desiredState;
+    uint32_t lastRunState;
 };
 
 
