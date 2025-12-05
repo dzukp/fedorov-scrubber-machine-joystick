@@ -379,10 +379,8 @@ void brushAndAir() {
   debBrush.update();
   debAir.update();
   
-  // bool bBrushEnable = (bForward && digitalRead(PIN_BRUSH) == HIGH);
-  // bool bAirEnable   = (bForward && digitalRead(PIN_AIR)   == HIGH);
-  bool bBrushEnable = ((bForward || bBackward) && debBrush.read() == HIGH);
-  bool bAirEnable   = (debAir.read()   == HIGH);
+  bool bBrushEnable = bForward && debBrush.read() == HIGH;
+  bool bAirEnable   = debAir.read() == HIGH;
 
   int iTargetBrushPWM = bBrushEnable ? int(iBrushAirMaxPWM) : 0;
   int iTargetAirPWM   = bAirEnable   ? int(iBrushAirMaxPWM) : 0;
