@@ -19,11 +19,14 @@ const int PIN_PUMP_2_PWM = 11;
 const int iFwdEdge = 550;
 const int iBcwEdge = 350;
 
-const unsigned long ulRelayDelay = 200;      // Задержка переключения реле (мс)
-const unsigned long ulSpeedStepDelay = 10;    // Интервал шагов ШИМ (мс)
+const unsigned long ulRelayDelay = 100;      // Задержка переключения реле (мс)
+const unsigned long ulRelayStopDelay = 2500;      // Задержка переключения реле (мс) при стопе
+const unsigned long ulSpeedStepDelay = 10;    // Интервал шагов ШИМ (мс) обратное ускорению
+const float fFrwStopAcceleration = 1.0;      // Ускорение торможения вперёд
+const float fBkwStopAcceleration = 1.0;      // Ускорение торможения назад
 
-const int iMaxFwdSpeed = 255;
-const int iMaxBcwSpeed = 150;
+const int iMaxFwdSpeed = 230;
+const int iMaxBcwSpeed = 120;
 
 // ---------- Настройки щёток и воздуха -------
 const unsigned long ulBrushAirStepDelay = 10;    // Интервал шагов ШИМ (мс)
@@ -32,7 +35,7 @@ const int iBrushAirMaxPWM = 255;
 
 // ---------- Настройка клапана и насосов -----
 
-const int iPumpMaxPWM = 255;  // макс скорость PWM насоса (0-255)
+const int iPumpMaxPWM = 165;  // макс скорость PWM насоса (0-255)
 const int iPumpMinPWM = 0;    // мин скорость PWM насоса (0-255)
 const int iStartPumpTimeout = 100;  // время между открытием клапана и пуском насосов
 const int iStopPumpTimeout = 100;  // время между закрытием клапана и стопом насосов
@@ -46,7 +49,9 @@ enum State {
   E_RELAY_K2_ON,
   E_RELAY_K3_ON,
   E_RUN_FORWARD,
-  E_RUN_BACKWARD
+  E_RUN_BACKWARD,
+  E_RELAY_LOW_WAIT_FWD,
+  E_RELAY_LOW_WAIT_BCW
 };
 
 State eState = E_STOP;
@@ -62,14 +67,15 @@ enum PumpValveState {
 PumpValveState ePumpValveState = EPV_STOP;
 
 // ---------- Рабочие переменные ----------
-int iSpeed = 0;
-int iSpeedTarget = 0;
+float fSpeed = 0.0f;
+float fSpeedTarget = 0.0f;
 
 int iK2 = LOW;
 int iK3 = LOW;
 
 unsigned long ulStateStart = 0;
 unsigned long ulLastSpeedStep = 0;
+unsigned long ulLastSpeedUpdate = 0;
 
 bool bForward = false;
 bool bBackward = false;
@@ -92,6 +98,7 @@ int iOutPWM = 0;
 // ---------- Прототипы ----------
 float fJoystickValue();
 void setState(State eNewState);
+void brakeSpeed(float fMaxSpeed, float fAcceleration);
 void machine();
 int speedSyncroPWM();
 void brushAndAir();
@@ -190,13 +197,26 @@ void loop() {
   
   Serial.println("-------------------------");
   Serial.println( millis() );
-  Serial.println( fJoy );
+  Serial.print("Joystick: ");
+  Serial.println( fJoy * 100 );
   
   machine();
   brushAndAir();
   pumpsAndValve();
 }
 
+// ---------- Чтение джойстика ----------
+float fJoystickValue() {
+  int iValue = analogRead(PIN_JOY);
+  float fJoystick = 0.0;
+
+  if (iValue > iFwdEdge)
+    fJoystick = float(iValue - iFwdEdge) / float(1023 - iFwdEdge);
+  else if (iValue < iBcwEdge)
+    fJoystick = -float(iBcwEdge - iValue) / float(iBcwEdge);
+
+  return fJoystick;
+}
 
 void machine() {
 
@@ -204,16 +224,17 @@ void machine() {
   switch (eState) {
 
     case E_STOP: {
+      fSpeed = 0.0f; 
       iOutK2 = LOW;
       iOutK3 = LOW;
       iOutPWM = 0;
 
       if (bForward) {
-        iSpeedTarget = int(fJoy * iMaxFwdSpeed);
+        fSpeedTarget = fJoy * iMaxFwdSpeed;
         setState(E_RELAY_K3_ON);
       } 
       else if (bBackward) {
-        iSpeedTarget = int(-fJoy * iMaxBcwSpeed);
+        fSpeedTarget = -fJoy * iMaxBcwSpeed;
         setState(E_RELAY_K2_ON);
       }
       break;
@@ -221,31 +242,57 @@ void machine() {
 
     case E_TO_ZERO_FWD: {
       iOutK2 = LOW;
-      iOutK3 = HIGH;  // для торможения вперёд K3 включено
-      if (ulNow - ulLastSpeedStep >= ulSpeedStepDelay) {
-        ulLastSpeedStep = ulNow;
-        if (iSpeed > 0) {
-          iSpeed--;
-        } else {
-          setState(E_RELAY_OFF);
-        }
+      iOutK3 = HIGH;
+
+      brakeSpeed(iMaxFwdSpeed, fFrwStopAcceleration);
+
+      if (fSpeed <= 0.5f) {
+        fSpeed = 0.0f;
+        setState(E_RELAY_LOW_WAIT_FWD);
       }
-      iOutPWM = iSpeed;
+
+      iOutPWM = int(fSpeed + 0.5f);  // округление
       break;
     }
 
     case E_TO_ZERO_BCW: {
-      iOutK2 = HIGH;  // для торможения назад K2 включено
+      iOutK2 = HIGH;
       iOutK3 = LOW;
-      if (ulNow - ulLastSpeedStep >= ulSpeedStepDelay) {
-        ulLastSpeedStep = ulNow;
-        if (iSpeed > 0) {
-          iSpeed--;
-        } else {
-          setState(E_RELAY_OFF);
-        }
+
+      brakeSpeed(iMaxBcwSpeed, fBkwStopAcceleration);
+
+      if (fSpeed <= 0.5f) {
+        fSpeed = 0.0f;
+        setState(E_RELAY_LOW_WAIT_BCW);
       }
-      iOutPWM = iSpeed;
+
+      iOutPWM = int(fSpeed + 0.5f);
+      break;
+    }
+
+    case E_RELAY_LOW_WAIT_FWD: {
+      iOutK2 = LOW;
+      iOutK3 = HIGH;
+      iOutPWM = 0;
+      if (ulNow - ulStateStart >= ulRelayStopDelay) {
+         setState(E_RELAY_OFF);
+      }
+      else if (bForward) {
+        setState(E_RUN_FORWARD);
+      }
+      break;
+    }
+
+    case E_RELAY_LOW_WAIT_BCW: {
+      iOutK2 = HIGH;
+      iOutK3 = LOW;
+      iOutPWM = 0;
+      if (ulNow - ulStateStart >= ulRelayStopDelay) {
+         setState(E_RELAY_OFF);
+      }
+      else if (bBackward) {
+        setState(E_RUN_BACKWARD);
+      }      
       break;
     }
 
@@ -287,14 +334,14 @@ void machine() {
       if (!bForward) {
         setState(E_TO_ZERO_FWD);
       } else {
-        iSpeedTarget = int(fJoy * iMaxFwdSpeed);
+        fSpeedTarget = fJoy * iMaxFwdSpeed;
         if (ulNow - ulLastSpeedStep >= ulSpeedStepDelay) {
           ulLastSpeedStep = ulNow;
-          if (iSpeed < iSpeedTarget) iSpeed++;
-          else if (iSpeed > iSpeedTarget) iSpeed--;
+          if (fSpeed < fSpeedTarget) fSpeed++;
+          else if (fSpeed > fSpeedTarget) fSpeed--;
         }
       }
-      iOutPWM = iSpeed;
+      iOutPWM = int(fSpeed + 0.5f);
       break;
     }
 
@@ -305,14 +352,14 @@ void machine() {
       if (!bBackward) {
         setState(E_TO_ZERO_BCW);
       } else {
-        iSpeedTarget = int(-fJoy * iMaxBcwSpeed);
+        fSpeedTarget = -fJoy * iMaxBcwSpeed;
         if (ulNow - ulLastSpeedStep >= ulSpeedStepDelay) {
           ulLastSpeedStep = ulNow;
-          if (iSpeed < iSpeedTarget) iSpeed++;
-          else if (iSpeed > iSpeedTarget) iSpeed--;
+          if (fSpeed < fSpeedTarget) fSpeed++;
+          else if (fSpeed > fSpeedTarget) fSpeed--;
         }
       }
-      iOutPWM = iSpeed;
+      iOutPWM = int(fSpeed + 0.5f);
       break;
     }
 
@@ -335,35 +382,35 @@ void machine() {
 // ---------- Переключение состояния ----------
 void setState(State eNewState) {
   eState = eNewState;
-  ulStateStart = millis();
-  ulLastSpeedStep = millis();
+  ulStateStart = ulNow;
+  ulLastSpeedStep = ulNow;
+  ulLastSpeedUpdate = ulNow;
 }
 
-// ---------- Чтение джойстика ----------
-float fJoystickValue() {
-  int iValue = analogRead(PIN_JOY);
-  float fJoystick = 0.0;
+// ---------- Расчёт торможения ---------------
+void brakeSpeed(float fMaxSpeed, float fAcceleration) {
+    float dt = (ulNow - ulLastSpeedUpdate) * 0.001f;
+    ulLastSpeedUpdate = ulNow;
 
-  if (iValue > iFwdEdge)
-    fJoystick = float(iValue - iFwdEdge) / float(1023 - iFwdEdge);
-  else if (iValue < iBcwEdge)
-    fJoystick = -float(iBcwEdge - iValue) / float(iBcwEdge);
+    float dec = fMaxSpeed * fAcceleration * dt;
+    fSpeed -= dec;
 
-  return fJoystick;
+    if (fSpeed < 0.1f)
+        fSpeed = 0.0f;
 }
 
 // --- Синхронное со скоростью значение ----
 int speedSyncroPWM(int iMinPWM, int iMaxPWM) {
-    if (iSpeed <= 0)
+    if (fSpeed <= 0.5f)
         return 0;  // остановка — насос выключен
 
     // коэффициент скорости 0..1
-    float k = float(iSpeed) / float(iMaxFwdSpeed);
+    float k = fSpeed / float(iMaxFwdSpeed);
 
     // расчёт PWM
     int iPWM = int(k * float(iMaxPWM - iMinPWM)) + iMinPWM;
 
-    // ограничение снизу (кроме случая iSpeed=0)
+    // ограничение снизу (кроме случая fSpeed=0)
     if (iPWM < iMinPWM)
         iPWM = iMinPWM;
 
@@ -379,8 +426,10 @@ void brushAndAir() {
   debBrush.update();
   debAir.update();
   
-  bool bBrushEnable = bForward && debBrush.read() == HIGH;
-  bool bAirEnable   = debAir.read() == HIGH;
+  // bool bBrushEnable = (bForward && digitalRead(PIN_BRUSH) == HIGH);
+  // bool bAirEnable   = (bForward && digitalRead(PIN_AIR)   == HIGH);
+  bool bBrushEnable = ((bForward || bBackward) && debBrush.read() == HIGH);
+  bool bAirEnable   = (debAir.read()   == HIGH);
 
   int iTargetBrushPWM = bBrushEnable ? int(iBrushAirMaxPWM) : 0;
   int iTargetAirPWM   = bAirEnable   ? int(iBrushAirMaxPWM) : 0;
@@ -410,8 +459,11 @@ void brushAndAir() {
     analogWrite(PIN_BRUSH_PWM, iBrushPWM);
     analogWrite(PIN_AIR_PWM, iAirPWM);
     
-    Serial.print( "brush: " ); Serial.println( iBrushPWM );    
-    Serial.print( "air: " ); Serial.println( iAirPWM );
+    //Serial.print( "PIN_BRUSH: " ); Serial.println( digitalRead(PIN_BRUSH) );
+    //Serial.print( "brush_di: " ); Serial.println( debBrush.read() );   
+    //Serial.print( "bBrushEnable: " ); Serial.println( bBrushEnable ); 
+    //Serial.print( "brush: " ); Serial.println( iBrushPWM );    
+    //Serial.print( "air: " ); Serial.println( iAirPWM );
   }
 }
 
@@ -423,8 +475,8 @@ void pumpsAndValve() {
   bool bEnable = (bForward && debPump.read() == HIGH);
   
   int iTargetPumpPWM = 0;
-    if (iSpeed > 0)
-        // iTargetPumpPWM = int((float)iSpeed / float(iMaxFwdSpeed) * float(iPumpMaxPWM));
+    if (fSpeed > 0.5f)
+        // iTargetPumpPWM = int(fSpeed / float(iMaxFwdSpeed) * float(iPumpMaxPWM));
         iTargetPumpPWM = speedSyncroPWM(iPumpMinPWM, iPumpMaxPWM);
 
     switch (ePumpValveState)
@@ -493,6 +545,6 @@ void pumpsAndValve() {
   analogWrite(PIN_PUMP_1_PWM, iPumpPWM);
   analogWrite(PIN_PUMP_2_PWM, iPumpPWM);
   
-  Serial.print("pumpState: "); Serial.println(ePumpValveState);
-  Serial.print("pumpPWM: ");   Serial.println(iPumpPWM);
+  // Serial.print("pumpState: "); Serial.println(ePumpValveState);
+  // Serial.print("pumpPWM: ");   Serial.println(iPumpPWM);
 }
