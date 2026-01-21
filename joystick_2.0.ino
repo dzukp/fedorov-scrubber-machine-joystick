@@ -3,6 +3,7 @@ const int PIN_K2 = A4;
 const int PIN_K3 = A3;
 const int PIN_PWM = 5;
 const int PIN_JOY = A0;
+const int PIN_ENGINE_CURRENT = A2;
 
 const int PIN_BRUSH = A7;
 const int PIN_BRUSH_PWM = 10;
@@ -155,6 +156,7 @@ void setup() {
   pinMode(PIN_K3, OUTPUT);
   pinMode(PIN_PWM, OUTPUT);
   pinMode(PIN_JOY, INPUT);
+  pinMode(PIN_ENGINE_CURRENT, INPUT);
 
   digitalWrite(PIN_K2, LOW);
   digitalWrite(PIN_K3, LOW);
@@ -199,6 +201,8 @@ void loop() {
   Serial.println( millis() );
   Serial.print("Joystick: ");
   Serial.println( fJoy * 100 );
+  Serial.print("Engine current: ");
+  Serial.println(analogRead(PIN_ENGINE_CURRENT));
   
   machine();
   brushAndAir();
