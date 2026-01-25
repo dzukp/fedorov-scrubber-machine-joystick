@@ -22,10 +22,10 @@ const int iBcwEdge = 350;
 
 const unsigned long ulRelayDelay = 100;      // Задержка переключения реле (мс)
 const unsigned long ulRelayStopDelay = 2500;      // Задержка переключения реле (мс) при стопе
-const unsigned long ulSpeedStepDelay = 10;    // Интервал шагов ШИМ (мс) обратное ускорению
+const unsigned long ulSpeedStepDelay = 10;   // Интервал шагов ШИМ (мс) обратное ускорению
 const float fFrwStopAcceleration = 1.0;      // Ускорение торможения вперёд
 const float fBkwStopAcceleration = 1.0;      // Ускорение торможения назад
-
+const int uiRelayStopEngineCurrent = 471;    // значение A2 остановка двигателя (2.3V / 5.0V) * 1024 = 471
 const int iMaxFwdSpeed = 230;
 const int iMaxBcwSpeed = 120;
 
@@ -83,6 +83,8 @@ bool bBackward = false;
 
 unsigned long ulNow = 0;
 float fJoy = 0.0;
+
+unsigned int uiEngineCurrent = 0;
 
 int iBrushPWM = 0;
 int iAirPWM = 0;
@@ -196,13 +198,14 @@ void loop() {
   fJoy = fJoystickValue();
   bForward = fJoy > 0.05;
   bBackward = fJoy < -0.05;
+  uiEngineCurrent = analogRead(PIN_ENGINE_CURRENT);
   
   Serial.println("-------------------------");
   Serial.println( millis() );
   Serial.print("Joystick: ");
   Serial.println( fJoy * 100 );
   Serial.print("Engine current: ");
-  Serial.println(analogRead(PIN_ENGINE_CURRENT));
+  Serial.println(uiEngineCurrent);
   
   machine();
   brushAndAir();
@@ -278,9 +281,12 @@ void machine() {
       iOutK2 = LOW;
       iOutK3 = HIGH;
       iOutPWM = 0;
-      if (ulNow - ulStateStart >= ulRelayStopDelay) {
+      if (uiEngineCurrent >= uiRelayStopEngineCurrent) {
          setState(E_RELAY_OFF);
       }
+      //else if (ulNow - ulStateStart >= ulRelayStopDelay) {
+      //  setState(E_RELAY_OFF);
+      //}
       else if (bForward) {
         setState(E_RUN_FORWARD);
       }
@@ -291,9 +297,12 @@ void machine() {
       iOutK2 = HIGH;
       iOutK3 = LOW;
       iOutPWM = 0;
-      if (ulNow - ulStateStart >= ulRelayStopDelay) {
+      if (uiEngineCurrent >= uiRelayStopEngineCurrent) {
          setState(E_RELAY_OFF);
       }
+      //else if (ulNow - ulStateStart >= ulRelayStopDelay) {
+      //  setState(E_RELAY_OFF);
+      //}
       else if (bBackward) {
         setState(E_RUN_BACKWARD);
       }      
