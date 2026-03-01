@@ -16,6 +16,11 @@ const int PIN_VALVE = 6;
 const int PIN_PUMP_1_PWM = 3;
 const int PIN_PUMP_2_PWM = 11;
 
+const int PIN_PUMP_MODE_0_LED = 7;
+const int PIN_PUMP_MODE_1_LED = 8;
+const int PIN_PUMP_MODE_2_LED = 4;
+const int PIN_PUMP_MODE_3_LED = 12;
+
 // ---------- Настройки движения машины -------
 const int iFwdEdge = 550;
 const int iBcwEdge = 350;
@@ -36,7 +41,7 @@ const int iBrushAirMaxPWM = 255;
 
 // ---------- Настройка клапана и насосов -----
 
-const int iPumpMaxPWM = 165;  // макс скорость PWM насоса (0-255)
+const int iPumpMaxPWMLevels[] = {128, 192, 255};
 const int iPumpMinPWM = 0;    // мин скорость PWM насоса (0-255)
 const int iStartPumpTimeout = 100;  // время между открытием клапана и пуском насосов
 const int iStopPumpTimeout = 100;  // время между закрытием клапана и стопом насосов
@@ -93,6 +98,10 @@ unsigned long ulLastBrushAirStep = 0;
 int iPumpPWM = 0;
 int iValve = LOW;
 
+uint8_t uiPumpMode = 0;
+int iPumpBtnLast = LOW;
+unsigned long ulPumpStateStart = 0;
+
 // ---------- Буфер выходов ----------
 int iOutK2 = LOW;
 int iOutK3 = LOW;
@@ -103,7 +112,7 @@ float fJoystickValue();
 void setState(State eNewState);
 void brakeSpeed(float fMaxSpeed, float fAcceleration);
 void machine();
-int speedSyncroPWM();
+int speedSyncroPWM(int iMinPWM, int iMaxPWM);
 void brushAndAir();
 void pumpsAndValve();
 
@@ -186,6 +195,15 @@ void setup() {
   analogWrite(PIN_PUMP_2_PWM, 0);
   
   debPump.begin();
+
+  pinMode(PIN_PUMP_MODE_0_LED, OUTPUT);
+  pinMode(PIN_PUMP_MODE_1_LED, OUTPUT);
+  pinMode(PIN_PUMP_MODE_2_LED, OUTPUT);
+  pinMode(PIN_PUMP_MODE_3_LED, OUTPUT);
+  digitalWrite(PIN_PUMP_MODE_0_LED, LOW);
+  digitalWrite(PIN_PUMP_MODE_1_LED, LOW);
+  digitalWrite(PIN_PUMP_MODE_2_LED, LOW);
+  digitalWrite(PIN_PUMP_MODE_3_LED, LOW);
 
   Serial.begin(115200);
 
@@ -281,12 +299,12 @@ void machine() {
       iOutK2 = LOW;
       iOutK3 = HIGH;
       iOutPWM = 0;
-      if (uiEngineCurrent >= uiRelayStopEngineCurrent) {
-         setState(E_RELAY_OFF);
+      // if (uiEngineCurrent >= uiRelayStopEngineCurrent) {
+      //    setState(E_RELAY_OFF);
+      // }
+      if (ulNow - ulStateStart >= ulRelayStopDelay) {
+        setState(E_RELAY_OFF);
       }
-      //else if (ulNow - ulStateStart >= ulRelayStopDelay) {
-      //  setState(E_RELAY_OFF);
-      //}
       else if (bForward) {
         setState(E_RUN_FORWARD);
       }
@@ -297,12 +315,12 @@ void machine() {
       iOutK2 = HIGH;
       iOutK3 = LOW;
       iOutPWM = 0;
-      if (uiEngineCurrent >= uiRelayStopEngineCurrent) {
-         setState(E_RELAY_OFF);
+      // if (uiEngineCurrent >= uiRelayStopEngineCurrent) {
+      //    setState(E_RELAY_OFF);
+      // }
+      if (ulNow - ulStateStart >= ulRelayStopDelay) {
+        setState(E_RELAY_OFF);
       }
-      //else if (ulNow - ulStateStart >= ulRelayStopDelay) {
-      //  setState(E_RELAY_OFF);
-      //}
       else if (bBackward) {
         setState(E_RUN_BACKWARD);
       }      
@@ -485,78 +503,95 @@ void pumpsAndValve() {
   debPump.update();
   
   // bool bEnable = (bForward && digitalRead(PIN_PUMP_AND_VALVE) == HIGH);
-  bool bEnable = (bForward && debPump.read() == HIGH);
+  int iPumpBtn = debPump.read();
+  if (iPumpBtn == HIGH && iPumpBtnLast == LOW) {
+    uiPumpMode = (uiPumpMode + 1) % 4;
+  }
+  iPumpBtnLast = iPumpBtn;
+
+  int iPumpMaxPWM = 0;
+  const int iPumpMaxPWMLevelsCount = sizeof(iPumpMaxPWMLevels) / sizeof(iPumpMaxPWMLevels[0]);
+  if (uiPumpMode >= 1 && uiPumpMode <= iPumpMaxPWMLevelsCount) {
+      iPumpMaxPWM = iPumpMaxPWMLevels[uiPumpMode - 1];
+  }
+
+  bool bEnable = (uiPumpMode != 0) && bForward;
   
   int iTargetPumpPWM = 0;
-    if (fSpeed > 0.5f)
-        // iTargetPumpPWM = int(fSpeed / float(iMaxFwdSpeed) * float(iPumpMaxPWM));
-        iTargetPumpPWM = speedSyncroPWM(iPumpMinPWM, iPumpMaxPWM);
+  if (bEnable && fSpeed > 0.5f)
+      // iTargetPumpPWM = int(fSpeed / float(iMaxFwdSpeed) * float(iPumpMaxPWM));
+      iTargetPumpPWM = speedSyncroPWM(iPumpMinPWM, iPumpMaxPWM);
 
-    switch (ePumpValveState)
-    {
-        // ------------------------------------------------------
-        case EPV_STOP:   // всё выключено, ждём разрешения
-            iValve = LOW;
-            iPumpPWM = 0;
+  switch (ePumpValveState)
+  {
+      // ------------------------------------------------------
+      case EPV_STOP:   // всё выключено, ждём разрешения
+          iValve = LOW;
+          iPumpPWM = 0;
 
-            if (bEnable) { 
-                // начинаем включение → открыть клапан
-                iValve = HIGH;
-                ulStateStart = ulNow;
-                ePumpValveState = EPV_STARTING;
-            }
-            break;
+          if (bEnable) { 
+              // начинаем включение → открыть клапан
+              iValve = HIGH;
+              ulPumpStateStart = ulNow;
+              ePumpValveState = EPV_STARTING;
+          }
+          break;
 
-        // ------------------------------------------------------
-        case EPV_STARTING:   // клапан уже открыт, ждём 100 мс до запуска насосов
-            iValve = HIGH;
+      // ------------------------------------------------------
+      case EPV_STARTING:   // клапан уже открыт, ждём 100 мс до запуска насосов
+          iValve = HIGH;
 
-            if (!bEnable) {
-                // отменили — закрываем клапан
-                ePumpValveState = EPV_STOP;
-                break;
-            }
+          if (!bEnable) {
+              // отменили — закрываем клапан
+              ePumpValveState = EPV_STOP;
+              break;
+          }
 
-            if (ulNow - ulStateStart >= iStartPumpTimeout) {
-                // можно включать насосы
-                iPumpPWM = iTargetPumpPWM;
-                ePumpValveState = EPV_RUNNING;
-            }
-            break;
+          if (ulNow - ulPumpStateStart >= iStartPumpTimeout) {
+              // можно включать насосы
+              iPumpPWM = iTargetPumpPWM;
+              ePumpValveState = EPV_RUNNING;
+          }
+          break;
 
-        // ------------------------------------------------------
-        case EPV_RUNNING:    // клапан открыт, насосы крутятся
-            iValve = HIGH;
+      // ------------------------------------------------------
+      case EPV_RUNNING:    // клапан открыт, насосы крутятся
+          iValve = HIGH;
 
-            if (!bEnable) {
-                // начинаем выключение
-                iValve = LOW;
-                ulStateStart = ulNow;
-                ePumpValveState = EPV_STOPPING;
-                break;
-            }
+          if (!bEnable) {
+              // начинаем выключение
+              iValve = LOW;
+              ulPumpStateStart = ulNow;
+              ePumpValveState = EPV_STOPPING;
+              break;
+          }
 
-            // регулируем PWM насосов по скорости машины
-            iPumpPWM = iTargetPumpPWM;
-            break;
+          // регулируем PWM насосов по скорости машины
+          iPumpPWM = iTargetPumpPWM;
+          break;
 
-        // ------------------------------------------------------
-        case EPV_STOPPING:   // клапан закрыт, ждём 100 мс чтобы остановить насосы
-            iValve = LOW;
+      // ------------------------------------------------------
+      case EPV_STOPPING:   // клапан закрыт, ждём 100 мс чтобы остановить насосы
+          iValve = LOW;
 
-            if (ulNow - ulStateStart >= iStopPumpTimeout) {
-                iPumpPWM = 0;
-                ePumpValveState = EPV_STOP;
-            }
-            break;
-            
-        default:
-          ePumpValveState = EPV_STOP;
-    }
+          if (ulNow - ulPumpStateStart >= iStopPumpTimeout) {
+              iPumpPWM = 0;
+              ePumpValveState = EPV_STOP;
+          }
+          break;
+          
+      default:
+        ePumpValveState = EPV_STOP;
+  }
   
   digitalWrite(PIN_VALVE, iValve);
   analogWrite(PIN_PUMP_1_PWM, iPumpPWM);
   analogWrite(PIN_PUMP_2_PWM, iPumpPWM);
+
+  digitalWrite(PIN_PUMP_MODE_0_LED, (uiPumpMode == 0) ? HIGH : LOW);
+  digitalWrite(PIN_PUMP_MODE_1_LED, (uiPumpMode == 1) ? HIGH : LOW);
+  digitalWrite(PIN_PUMP_MODE_2_LED, (uiPumpMode == 2) ? HIGH : LOW);
+  digitalWrite(PIN_PUMP_MODE_3_LED, (uiPumpMode == 3) ? HIGH : LOW);
   
   // Serial.print("pumpState: "); Serial.println(ePumpValveState);
   // Serial.print("pumpPWM: ");   Serial.println(iPumpPWM);
