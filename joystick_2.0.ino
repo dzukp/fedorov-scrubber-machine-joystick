@@ -473,7 +473,7 @@ void accelerateSpeed(float fMaxSpeed, float fAcceleration) {
             fSpeed = fSpeedTarget;
     }
 
-    if (fSpeed < 0.0f)
+    if (fSpeed < 0.1f)
         fSpeed = 0.0f;
     if (fSpeed > fMaxSpeed)
         fSpeed = fMaxSpeed;
