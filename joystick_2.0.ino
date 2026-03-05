@@ -1,49 +1,48 @@
 // ---------- Настройки пинов -----------------
-const int PIN_K2 = A4;
-const int PIN_K3 = A3;
-const int PIN_PWM = 5;
-const int PIN_JOY = A0;
-const int PIN_ENGINE_CURRENT = A2;
+constexpr int PIN_K2 = A4;
+constexpr int PIN_K3 = A3;
+constexpr int PIN_PWM = 5;
+constexpr int PIN_JOY = A0;
+constexpr int PIN_ENGINE_CURRENT = A2;
 
-const int PIN_BRUSH = A7;
-const int PIN_BRUSH_PWM = 10;
+constexpr int PIN_BRUSH = A7;
+constexpr int PIN_BRUSH_PWM = 10;
 
-const int PIN_AIR = A6;
-const int PIN_AIR_PWM = 9;
+constexpr int PIN_AIR = A6;
+constexpr int PIN_AIR_PWM = 9;
 
-const int PIN_PUMP_AND_VALVE = A1;
-const int PIN_VALVE = 6;
-const int PIN_PUMP_1_PWM = 3;
-const int PIN_PUMP_2_PWM = 11;
+constexpr int PIN_PUMP_AND_VALVE = A1;
+constexpr int PIN_VALVE = 6;
+constexpr int PIN_PUMP_PWM = 3;
 
-const int PIN_PUMP_MODE_0_LED = 7;
-const int PIN_PUMP_MODE_1_LED = 8;
-const int PIN_PUMP_MODE_2_LED = 4;
-const int PIN_PUMP_MODE_3_LED = 12;
+constexpr int PIN_PUMP_MODE_0_LED = 7;
+constexpr int PIN_PUMP_MODE_1_LED = 8;
+constexpr int PIN_PUMP_MODE_2_LED = 11;
+constexpr int PIN_PUMP_MODE_3_LED = 12;
 
 // ---------- Настройки движения машины -------
-const int iFwdEdge = 550;
-const int iBcwEdge = 350;
+constexpr int iFwdEdge = 550;
+constexpr int iBcwEdge = 350;
 
-const unsigned long ulRelayDelay = 100;      // Задержка переключения реле (мс)
-const unsigned long ulRelayStopDelay = 2500;      // Задержка переключения реле (мс) при стопе
-const unsigned long ulSpeedStepDelay = 10;   // Интервал шагов ШИМ (мс) обратное ускорению
-const float fFrwStopAcceleration = 1.0;      // Ускорение торможения вперёд
-const float fBkwStopAcceleration = 1.0;      // Ускорение торможения назад
-const int uiRelayStopEngineCurrent = 471;    // значение A2 остановка двигателя (2.3V / 5.0V) * 1024 = 471
-const int iMaxFwdSpeed = 230;
-const int iMaxBcwSpeed = 120;
+constexpr unsigned long ulRelayDelay = 100;      // Задержка переключения реле (мс)
+constexpr unsigned long ulRelayStopDelay = 2500;      // Задержка переключения реле (мс) при стопе
+constexpr unsigned long ulSpeedStepDelay = 10;   // Интервал шагов ШИМ (мс) обратное ускорению
+constexpr float fFrwStopAcceleration = 1.0;      // Ускорение торможения вперёд
+constexpr float fBkwStopAcceleration = 1.0;      // Ускорение торможения назад
+constexpr int uiRelayStopEngineCurrent = 471;    // значение A2 остановка двигателя (2.3V / 5.0V) * 1024 = 471
+constexpr int iMaxFwdSpeed = 230;
+constexpr int iMaxBcwSpeed = 120;
 
 // ---------- Настройки щёток и воздуха -------
-const unsigned long ulBrushAirStepDelay = 10;    // Интервал шагов ШИМ (мс)
-const unsigned long ulBrushAirRampTime  = 300;   // время разгона (мс)
-const int iBrushAirMaxPWM = 255;
+constexpr unsigned long ulBrushAirStepDelay = 10;    // Интервал шагов ШИМ (мс)
+constexpr unsigned long ulBrushAirRampTime  = 300;   // время разгона (мс)
+constexpr int iBrushAirMaxPWM = 255;
 
 // ---------- Настройка клапана и насосов -----
-const int iPumpMaxPWMLevels[] = {128, 192, 255};
-const int iPumpMinPWM = 0;    // мин скорость PWM насоса (0-255)
-const int iStartPumpTimeout = 100;  // время между открытием клапана и пуском насосов
-const int iStopPumpTimeout = 100;  // время между закрытием клапана и стопом насосов
+constexpr int iPumpMaxPWMLevels[] = {128, 192, 255};
+constexpr int iPumpMinPWM = 0;    // мин скорость PWM насоса (0-255)
+constexpr int iStartPumpTimeout = 100;  // время между открытием клапана и пуском насосов
+constexpr int iStopPumpTimeout = 100;  // время между закрытием клапана и стопом насосов
 
 // ----------- Проверки параметров ------------
 static_assert(iFwdEdge >= 0 && iFwdEdge <= 1023, "iFwdEdge должен быть в диапазоне 0..1023");
@@ -66,6 +65,17 @@ static_assert(ulRelayDelay > 0, "ulRelayDelay должен быть > 0");
 static_assert(ulSpeedStepDelay > 0, "ulSpeedStepDelay должен быть > 0");
 static_assert(ulBrushAirStepDelay > 0, "ulBrushAirStepDelay должен быть > 0");
 static_assert(ulBrushAirRampTime > 0, "ulBrushAirRampTime должен быть > 0");
+
+static_assert(PIN_PUMP_PWM != PIN_PUMP_MODE_0_LED, "Конфликт пинов: PWM насоса и LED режима");
+static_assert(PIN_PUMP_PWM != PIN_PUMP_MODE_1_LED, "Конфликт пинов: PWM насоса и LED режима");
+static_assert(PIN_PUMP_PWM != PIN_PUMP_MODE_2_LED, "Конфликт пинов: PWM насоса и LED режима");
+static_assert(PIN_PUMP_PWM != PIN_PUMP_MODE_3_LED, "Конфликт пинов: PWM насоса и LED режима");
+static_assert(PIN_PUMP_MODE_0_LED != PIN_PUMP_MODE_1_LED, "Пины LED режимов должны быть разными");
+static_assert(PIN_PUMP_MODE_0_LED != PIN_PUMP_MODE_2_LED, "Пины LED режимов должны быть разными");
+static_assert(PIN_PUMP_MODE_0_LED != PIN_PUMP_MODE_3_LED, "Пины LED режимов должны быть разными");
+static_assert(PIN_PUMP_MODE_1_LED != PIN_PUMP_MODE_2_LED, "Пины LED режимов должны быть разными");
+static_assert(PIN_PUMP_MODE_1_LED != PIN_PUMP_MODE_3_LED, "Пины LED режимов должны быть разными");
+static_assert(PIN_PUMP_MODE_2_LED != PIN_PUMP_MODE_3_LED, "Пины LED режимов должны быть разными");
 
 // ---------- Перечисление состояний машины ----------
 enum State {
@@ -210,10 +220,8 @@ void setup() {
   pinMode(PIN_VALVE, OUTPUT);
   digitalWrite(PIN_VALVE, LOW);
 
-  pinMode(PIN_PUMP_1_PWM, OUTPUT);
-  pinMode(PIN_PUMP_2_PWM, OUTPUT);
-  analogWrite(PIN_PUMP_1_PWM, 0);
-  analogWrite(PIN_PUMP_2_PWM, 0);
+  pinMode(PIN_PUMP_PWM, OUTPUT);
+  analogWrite(PIN_PUMP_PWM, 0);
   
   debPump.begin();
 
@@ -605,8 +613,7 @@ void pumpsAndValve() {
   }
   
   digitalWrite(PIN_VALVE, iValve);
-  analogWrite(PIN_PUMP_1_PWM, iPumpPWM);
-  analogWrite(PIN_PUMP_2_PWM, iPumpPWM);
+  analogWrite(PIN_PUMP_PWM, iPumpPWM);
 
   digitalWrite(PIN_PUMP_MODE_0_LED, (uiPumpMode == 0) ? HIGH : LOW);
   digitalWrite(PIN_PUMP_MODE_1_LED, (uiPumpMode == 1) ? HIGH : LOW);
