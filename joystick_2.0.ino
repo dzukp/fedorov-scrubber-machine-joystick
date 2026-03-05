@@ -27,6 +27,8 @@ constexpr int iBcwEdge = 350;
 constexpr unsigned long ulRelayDelay = 100;      // Задержка переключения реле (мс)
 constexpr unsigned long ulRelayStopDelay = 2500;      // Задержка переключения реле (мс) при стопе
 constexpr unsigned long ulSpeedStepDelay = 10;   // Интервал шагов ШИМ (мс) обратное ускорению
+constexpr float fFrwAcceleration = 1.0;          // Ускорение разгона вперёд
+constexpr float fBkwAcceleration = 1.0;          // Ускорение разгона назад
 constexpr float fFrwStopAcceleration = 1.0;      // Ускорение торможения вперёд
 constexpr float fBkwStopAcceleration = 1.0;      // Ускорение торможения назад
 constexpr int uiRelayStopEngineCurrent = 471;    // значение A2 остановка двигателя (2.3V / 5.0V) * 1024 = 471
@@ -63,6 +65,8 @@ static_assert(iStartPumpTimeout >= 0, "iStartPumpTimeout должен быть >
 static_assert(iStopPumpTimeout >= 0, "iStopPumpTimeout должен быть >= 0");
 static_assert(ulRelayDelay > 0, "ulRelayDelay должен быть > 0");
 static_assert(ulSpeedStepDelay > 0, "ulSpeedStepDelay должен быть > 0");
+static_assert(fFrwAcceleration > 0.0f, "fFrwAcceleration должен быть > 0");
+static_assert(fBkwAcceleration > 0.0f, "fBkwAcceleration должен быть > 0");
 static_assert(ulBrushAirStepDelay > 0, "ulBrushAirStepDelay должен быть > 0");
 static_assert(ulBrushAirRampTime > 0, "ulBrushAirRampTime должен быть > 0");
 
@@ -142,6 +146,7 @@ int iOutPWM = 0;
 float fJoystickValue();
 void setState(State eNewState);
 void brakeSpeed(float fMaxSpeed, float fAcceleration);
+void accelerateSpeed(float fMaxSpeed, float fAcceleration);
 void machine();
 int speedSyncroPWM(int iMinPWM, int iMaxPWM);
 void brushAndAir();
@@ -395,11 +400,7 @@ void machine() {
         setState(E_TO_ZERO_FWD);
       } else {
         fSpeedTarget = fJoy * iMaxFwdSpeed;
-        if (ulNow - ulLastSpeedStep >= ulSpeedStepDelay) {
-          ulLastSpeedStep = ulNow;
-          if (fSpeed < fSpeedTarget) fSpeed++;
-          else if (fSpeed > fSpeedTarget) fSpeed--;
-        }
+        accelerateSpeed(iMaxFwdSpeed, fFrwAcceleration);
       }
       iOutPWM = int(fSpeed + 0.5f);
       break;
@@ -413,11 +414,7 @@ void machine() {
         setState(E_TO_ZERO_BCW);
       } else {
         fSpeedTarget = -fJoy * iMaxBcwSpeed;
-        if (ulNow - ulLastSpeedStep >= ulSpeedStepDelay) {
-          ulLastSpeedStep = ulNow;
-          if (fSpeed < fSpeedTarget) fSpeed++;
-          else if (fSpeed > fSpeedTarget) fSpeed--;
-        }
+        accelerateSpeed(iMaxBcwSpeed, fBkwAcceleration);
       }
       iOutPWM = int(fSpeed + 0.5f);
       break;
@@ -457,6 +454,29 @@ void brakeSpeed(float fMaxSpeed, float fAcceleration) {
 
     if (fSpeed < 0.1f)
         fSpeed = 0.0f;
+}
+
+// ---------- Расчёт разгона/изменения скорости ---------------
+void accelerateSpeed(float fMaxSpeed, float fAcceleration) {
+    float dt = (ulNow - ulLastSpeedUpdate) * 0.001f;
+    ulLastSpeedUpdate = ulNow;
+
+    float step = fMaxSpeed * fAcceleration * dt;
+
+    if (fSpeed < fSpeedTarget) {
+        fSpeed += step;
+        if (fSpeed > fSpeedTarget)
+            fSpeed = fSpeedTarget;
+    } else if (fSpeed > fSpeedTarget) {
+        fSpeed -= step;
+        if (fSpeed < fSpeedTarget)
+            fSpeed = fSpeedTarget;
+    }
+
+    if (fSpeed < 0.0f)
+        fSpeed = 0.0f;
+    if (fSpeed > fMaxSpeed)
+        fSpeed = fMaxSpeed;
 }
 
 // --- Синхронное со скоростью значение ----
