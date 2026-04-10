@@ -20,6 +20,9 @@ constexpr int PIN_PUMP_MODE_1_LED = 8;
 constexpr int PIN_PUMP_MODE_2_LED = 11;
 constexpr int PIN_PUMP_MODE_3_LED = 12;
 
+constexpr int PIN_END_POSITION = 4;
+constexpr int PIN_END_POSITION_IND = 2;
+
 // ---------- Настройки движения машины -------
 constexpr int iFwdEdge = 550;
 constexpr int iBcwEdge = 350;
@@ -167,7 +170,6 @@ public:
     }
 
     void update() {
-        //int current = digitalRead(pin);
         int current = analogRead(pin) > 512 ? HIGH : LOW;
 
         if (current != lastReadState) {
@@ -196,6 +198,7 @@ private:
 DebounceInput debBrush(PIN_BRUSH);
 DebounceInput debAir(PIN_AIR);
 DebounceInput debPump(PIN_PUMP_AND_VALVE);
+DebounceInput debEndPosition(PIN_END_POSITION);
 
 // ---------- SETUP ----------
 void setup() {
@@ -213,7 +216,6 @@ void setup() {
   pinMode(PIN_BRUSH_PWM, OUTPUT);
   analogWrite(PIN_BRUSH_PWM, 0);
 
-  pinMode(PIN_AIR, INPUT);
   pinMode(PIN_AIR_PWM, OUTPUT);
   analogWrite(PIN_AIR_PWM, 0);
   
@@ -227,6 +229,10 @@ void setup() {
 
   pinMode(PIN_PUMP_PWM, OUTPUT);
   analogWrite(PIN_PUMP_PWM, 0);
+  
+  pinMode(PIN_END_POSITION_IND, OUTPUT);
+  digitalWrite(PIN_END_POSITION_IND, LOW);  
+  debEndPosition.begin();
   
   debPump.begin();
 
@@ -262,6 +268,9 @@ void loop() {
   machine();
   brushAndAir();
   pumpsAndValve();
+  
+  debEndPosition.update();
+  digitalWrite(PIN_END_POSITION_IND, debEndPosition.read());
 }
 
 // ---------- Чтение джойстика ----------
