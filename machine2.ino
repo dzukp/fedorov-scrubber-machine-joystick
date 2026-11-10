@@ -6,9 +6,10 @@
  * - Управление щетками (мотор), воздухом и клапаном.
  * - Мониторинг АКБ с гистерезисом и индикацией.
  * - Глобальная блокировка (низкий заряд, зарядка или выкл ПММ).
- * - Все кнопки моментальные, активный HIGH. Для входов на A6 и A7 
- *   обязательно нужен внешний резистор pull-down: эти пины ATmega328
- *   не имеют цифрового входного буфера, поэтому читаются через ADC.
+ * Входы:
+ * - Кнопки (Воздух, Клапан, Мотор щёток, ПММ) читаются через analogRead(),
+ *   нажатие = уровень > 512.
+ * - Концевик (A1) и сигнал зарядки (A2) активны по LOW (0 = вкл).
  */
 
 // --- Настройки логирования ---
@@ -18,12 +19,12 @@ const bool kDebugMode = true;  // Установите false, чтобы отк�
 
 // Входы
 const int PIN_BATTERY_ANALOG = A0;      // Напряжение АКБ (0-30V)
-const int PIN_BRUSH_LIMIT_SW = A1;      // Концевик "щётки опущены" (active HIGH)
-const int PIN_CHARGING_SIGNAL = A2;     // Сигнал зарядки (active HIGH)
-const int PIN_AIR_BUTTON = A4;          // Кнопка "Воздух" (toggle)
-const int PIN_VALVE_BUTTON = A5;        // Кнопка "Клапан" (toggle)
-const int PIN_BRUSH_MOTOR_BTN = A6;     // Кнопка "вкл двиг щёток" (toggle)
-const int PIN_PMM_BUTTON = A7;         // Кнопка "вкл ПММ" (toggle)
+const int PIN_BRUSH_LIMIT_SW = A1;      // Концевик "щётки опущены" (active LOW)
+const int PIN_CHARGING_SIGNAL = A2;     // Сигнал зарядки (active LOW)
+const int PIN_AIR_BUTTON = A4;          // Кнопка "Воздух" (toggle, >512 = нажата)
+const int PIN_VALVE_BUTTON = A5;        // Кнопка "Клапан" (toggle, >512 = нажата)
+const int PIN_BRUSH_MOTOR_BTN = A6;     // Кнопка "вкл двиг щёток" (toggle, >512)
+const int PIN_PMM_BUTTON = A7;         // Кнопка "вкл ПММ" (toggle, >512)
 
 // Выходы
 const int PIN_PMM_LAMP = 2;             // Лампа "ПММ вкл"
@@ -31,7 +32,7 @@ const int PIN_BRUSH_MOTOR_LAMP = 3;     // Лампа "двигатель щёт
 const int PIN_BAT_BAD_LAMP = 4;         // Лампа АКБ "Плохо"
 const int PIN_BAT_NORMAL_LAMP = 5;      // Лампа АКБ "Нормально"
 const int PIN_BAT_GOOD_LAMP = 7;        // Лампа АКБ "Хорошо"
-const int PIN_LIMIT_SW_LAMP = 8;        // Лампа "концевик щётки опущены"
+const int PIN_VALVE_LAMP = 8;           // Лампа "Клапан"
 const int PIN_AIR_LAMP = 9;             // Лампа "воздух"
 const int PIN_VALVE_RELAY = 10;         // Реле Клапана
 const int PIN_BRUSH_RELAY = 11;         // Реле Щёток (мотор)
@@ -47,15 +48,22 @@ const float HYSTERESIS = 0.3;
 const unsigned long DEBOUNCE_DELAY = 50; 
 const unsigned long BLINK_INTERVAL = 1000;
 
-// Порог срабатывания для кнопок на пинах A6/A7.
-// Эти пины ATmega328 не имеют цифрового входного буфера и НЕ поддерживают
-// digitalRead() - их обязательно нужно читать через analogRead().
+// Все кнопки (Воздух, Клапан, Мотор щёток, ПММ) читаются через analogRead().
+// Если уровень > ANALOG_BUTTON_THRESHOLD - кнопка считается нажатой.
 const int ANALOG_BUTTON_THRESHOLD = 512;
 
-// Все выходы (реле и лампы) работают в активной логике LOW:
-// LOW - выход включен, HIGH - выход выключен.
-const int OUTPUT_ON = LOW;
-const int OUTPUT_OFF = HIGH;
+// Реле (PIN_VALVE_RELAY, PIN_BRUSH_RELAY, PIN_AIR_RELAY) работают в
+// нормальной логике: LOW - выключено, HIGH - включено.
+const int RELAY_ON = HIGH;
+const int RELAY_OFF = LOW;
+
+// Лампы работают в инверсной логике: LOW - включена, HIGH - выключена.
+const int LAMP_ON = LOW;
+const int LAMP_OFF = HIGH;
+
+// Минимальная задержка между включением силовых выходов (реле), чтобы
+// избежать скачка тока при почти одновременном нажатии кнопок.
+const unsigned long MIN_STAGGER_MS = 1000;
 
 // --- Глобальные переменные состояния ---
 
@@ -81,7 +89,7 @@ struct DigitalInput {
 
 struct Button {
   int iPin;
-  bool bIsAnalogPin;   // true для A6/A7 - читать через analogRead()
+  bool bIsAnalogPin;   // true - читать через analogRead() с порогом >512
   bool bLastRawState;
   bool bLastStableState;
   unsigned long ulLastDebounceTime;
@@ -90,13 +98,24 @@ struct Button {
 DigitalInput diInputLimit = {PIN_BRUSH_LIMIT_SW, LOW, LOW, 0};
 DigitalInput diInputCharging = {PIN_CHARGING_SIGNAL, LOW, LOW, 0};
 
-Button btnAir = {PIN_AIR_BUTTON, false, LOW, LOW, 0};
-Button btnValve = {PIN_VALVE_BUTTON, false, LOW, LOW, 0};
+Button btnAir = {PIN_AIR_BUTTON, true, LOW, LOW, 0};
+Button btnValve = {PIN_VALVE_BUTTON, true, LOW, LOW, 0};
 Button btnMotor = {PIN_BRUSH_MOTOR_BTN, true, LOW, LOW, 0};
 Button btnPMM = {PIN_PMM_BUTTON, true, LOW, LOW, 0};
 
 unsigned long ulLastBlinkTime = 0;
 bool bBlinkToggle = false;
+
+// Время последнего ВКЛЮЧЕНИЯ силового выхода (для последовательного запуска,
+// чтобы не было скачка тока). Нулевое значение означает "не включалось".
+unsigned long ulLastOutputOnTime = 0;
+bool bPowerOutputActive = false;
+
+// Фактическое (текущее) состояние силовых выходов, участвующих в
+// последовательном запуске. Нужно, чтобы корректно отслеживать моменты
+// их включения. Клапан в этот механизм не входит (см. applyPowerOutput).
+bool bMotorOn = false;
+bool bAirOn = false;
 
 // --- Вспомогательные функции ---
 
@@ -143,8 +162,8 @@ bool getStableState(DigitalInput &di) {
 }
 
 // Антидребезг и детектирование фронта для кнопок.
-// Пины A6/A7 не поддерживают digitalRead() (нет цифрового буфера),
-// поэтому для них читаем аналоговое значение и сравниваем с порогом.
+// Все кнопки читаются через analogRead() и считаются нажатыми,
+// если уровень > ANALOG_BUTTON_THRESHOLD.
 bool checkButtonEdge(Button &b, const char* pszName) {
   bool bCurrentRaw;
   if (b.bIsAnalogPin) {
@@ -218,6 +237,49 @@ void updateBatteryState() {
   }
 }
 
+// Проверка, можно ли включить силовой выход сейчас, соблюдая последовательный
+// запуск (stagger). Разрешает включение только если прошло достаточно времени
+// с момента последнего включения другого силового выхода.
+bool canPowerOn() {
+  unsigned long ulNow = millis();
+  // Если какой-то силовой выход ещё активен, а с последнего включения
+  // не прошло MIN_STAGGER_MS - запрещаем мгновенное включение следующего.
+  if (bPowerOutputActive && (ulNow - ulLastOutputOnTime) < MIN_STAGGER_MS) {
+    return false;
+  }
+  ulLastOutputOnTime = ulNow;
+  return true;
+}
+
+// Применение состояния к силовому выходу с последовательным запуском.
+// Включение (переход из выкл в вкл) задерживается, если слишком рано после
+// последнего включения другого силового выхода (не прошло MIN_STAGGER_MS).
+// iLampPin = -1 означает, что лампы-индикатора у выхода нет (клапан).
+void applyPowerOutput(bool bDesired, bool &bActual, int iRelayPin, int iLampPin) {
+  if (bDesired && !bActual) {
+    // Желаем включить, но сейчас выключено - нужно пройти задержку запуска.
+    if (!canPowerOn()) {
+      return;  // ещё рано, откладываем включение до следующего цикла
+    }
+    bActual = true;
+    digitalWrite(iRelayPin, RELAY_ON);
+    if (iLampPin >= 0) digitalWrite(iLampPin, LAMP_ON);
+    if (kDebugMode) {
+      Serial.print("Силовой выход включён: ");
+      Serial.println(iRelayPin);
+    }
+  } else if (!bDesired && bActual) {
+    // Выключаем сразу, без задержки.
+    bActual = false;
+    digitalWrite(iRelayPin, RELAY_OFF);
+    if (iLampPin >= 0) digitalWrite(iLampPin, LAMP_OFF);
+    if (kDebugMode) {
+      Serial.print("Силовой выход выключен: ");
+      Serial.println(iRelayPin);
+    }
+  }
+}
+
 // --- Основной цикл ---
 
 void setup() {
@@ -229,7 +291,7 @@ void setup() {
   pinMode(PIN_BAT_BAD_LAMP, OUTPUT);
   pinMode(PIN_BAT_NORMAL_LAMP, OUTPUT);
   pinMode(PIN_BAT_GOOD_LAMP, OUTPUT);
-  pinMode(PIN_LIMIT_SW_LAMP, OUTPUT);
+  pinMode(PIN_VALVE_LAMP, OUTPUT);
   pinMode(PIN_AIR_LAMP, OUTPUT);
   pinMode(PIN_VALVE_RELAY, OUTPUT);
   pinMode(PIN_BRUSH_RELAY, OUTPUT);
@@ -242,24 +304,26 @@ void setup() {
   pinMode(PIN_BRUSH_MOTOR_BTN, INPUT);
   pinMode(PIN_PMM_BUTTON, INPUT);
 
-  // Безопасное начальное состояние: все реле и лампы выключены
-  digitalWrite(PIN_VALVE_RELAY, OUTPUT_OFF);
-  digitalWrite(PIN_BRUSH_RELAY, OUTPUT_OFF);
-  digitalWrite(PIN_AIR_RELAY, OUTPUT_OFF);
-  digitalWrite(PIN_PMM_LAMP, OUTPUT_OFF);
-  digitalWrite(PIN_BRUSH_MOTOR_LAMP, OUTPUT_OFF);
-  digitalWrite(PIN_BAT_BAD_LAMP, OUTPUT_OFF);
-  digitalWrite(PIN_BAT_NORMAL_LAMP, OUTPUT_OFF);
-  digitalWrite(PIN_BAT_GOOD_LAMP, OUTPUT_OFF);
-  digitalWrite(PIN_LIMIT_SW_LAMP, OUTPUT_OFF);
-  digitalWrite(PIN_AIR_LAMP, OUTPUT_OFF);
+  // Безопасное начальное состояние: все реле и лампы выключены.
+  // Реле: RELAY_OFF (LOW). Лампы: LAMP_OFF (HIGH).
+  digitalWrite(PIN_VALVE_RELAY, RELAY_OFF);
+  digitalWrite(PIN_BRUSH_RELAY, RELAY_OFF);
+  digitalWrite(PIN_AIR_RELAY, RELAY_OFF);
+  digitalWrite(PIN_PMM_LAMP, LAMP_OFF);
+  digitalWrite(PIN_BRUSH_MOTOR_LAMP, LAMP_OFF);
+  digitalWrite(PIN_BAT_BAD_LAMP, LAMP_OFF);
+  digitalWrite(PIN_BAT_NORMAL_LAMP, LAMP_OFF);
+  digitalWrite(PIN_BAT_GOOD_LAMP, LAMP_OFF);
+  digitalWrite(PIN_VALVE_LAMP, LAMP_OFF);
+  digitalWrite(PIN_AIR_LAMP, LAMP_OFF);
   logMsg("Система готова");
 }
 
 void loop() {
   fCurrentVoltage = readVoltage();
-  bool bIsCharging = getStableState(diInputCharging);
-  bool bBrushesLowered = getStableState(diInputLimit);
+  // PIN_CHARGING_SIGNAL и PIN_BRUSH_LIMIT_SW активны по LOW (0 = вкл).
+  bool bIsCharging = !getStableState(diInputCharging);
+  bool bBrushesLowered = !getStableState(diInputLimit);
 
   updateBatteryState();
 
@@ -320,34 +384,52 @@ void loop() {
   // Итоговое состояние выходов пересчитывается с явной проверкой блокировки
   // и условий безопасности (defense-in-depth), а не только на основе флагов
   // *Wanted, которые уже должны быть сброшены выше по логике.
-  // Важно: все выходы активны по LOW (OUTPUT_ON = LOW, OUTPUT_OFF = HIGH).
-  digitalWrite(PIN_PMM_LAMP, bPmmOn ? OUTPUT_ON : OUTPUT_OFF);
+  // Важно: реле активны по HIGH (RELAY_ON), лампы активны по LOW (LAMP_ON).
 
-  bool bMotorActive = (bMotorWanted && !bIsBlocked && bBrushesLowered);
-  digitalWrite(PIN_BRUSH_RELAY, bMotorActive ? OUTPUT_ON : OUTPUT_OFF);
-  digitalWrite(PIN_BRUSH_MOTOR_LAMP, bMotorActive ? OUTPUT_ON : OUTPUT_OFF);
+  // Включение силовых реле (мотор щёток, воздух) выполняется
+  // последовательно с задержкой MIN_STAGGER_MS, чтобы избежать скачка тока
+  // при почти одновременном нажатии кнопок.
+  bool bMotorDesired = (bMotorWanted && !bIsBlocked && bBrushesLowered);
+  // applyPowerOutput(bMotorDesired, bMotorOn, PIN_BRUSH_RELAY, PIN_BRUSH_MOTOR_LAMP);
+  digitalWrite(PIN_BRUSH_RELAY, bMotorDesired ? RELAY_ON : RELAY_OFF);
+  digitalWrite(PIN_BRUSH_MOTOR_LAMP, bMotorDesired ? LAMP_ON : LAMP_OFF);
 
-  bool bAirActive = (bAirWanted && !bIsBlocked);
-  digitalWrite(PIN_AIR_RELAY, bAirActive ? OUTPUT_ON : OUTPUT_OFF);
-  digitalWrite(PIN_AIR_LAMP, bAirActive ? OUTPUT_ON : OUTPUT_OFF);
+  bool bAirDesired = (bAirWanted && !bIsBlocked);
+  // applyPowerOutput(bAirDesired, bAirOn, PIN_AIR_RELAY, PIN_AIR_LAMP);
+  digitalWrite(PIN_AIR_RELAY, bAirDesired ? RELAY_ON : RELAY_OFF);
+  digitalWrite(PIN_AIR_LAMP, bAirDesired ? LAMP_ON : LAMP_OFF);
 
-  bool bValveActive = (bValveWanted && !bIsBlocked && bBrushesLowered);
-  digitalWrite(PIN_VALVE_RELAY, bValveActive ? OUTPUT_ON : OUTPUT_OFF);
+  // Клапан потребляет мало тока, поэтому включается СРАЗУ, без задержки
+  // и не участвует в последовательном запуске мотор/воздух.
+  bool bValveDesired = (bValveWanted && !bIsBlocked && bBrushesLowered);
+  digitalWrite(PIN_VALVE_RELAY, bValveDesired ? RELAY_ON : RELAY_OFF);
+  digitalWrite(PIN_VALVE_LAMP, bValveDesired ? LAMP_ON : LAMP_OFF);
 
-  digitalWrite(PIN_LIMIT_SW_LAMP, bBrushesLowered ? OUTPUT_ON : OUTPUT_OFF);
+  // Флаг активности силовых выходов обновляется ПОСЛЕ применения их состояний,
+  // чтобы canPowerOn() правильно определял момент последнего включения.
+  bPowerOutputActive = (bMotorOn || bAirOn);
 
-  digitalWrite(PIN_BAT_BAD_LAMP, (eCurrentBatState == STATE_BAD) ? OUTPUT_ON : OUTPUT_OFF);
-  digitalWrite(PIN_BAT_GOOD_LAMP, (eCurrentBatState == STATE_GOOD) ? OUTPUT_ON : OUTPUT_OFF);
-  
-  if (eCurrentBatState == STATE_NORMAL_SOLID) {
-    digitalWrite(PIN_BAT_NORMAL_LAMP, OUTPUT_ON);
-  } else if (eCurrentBatState == STATE_NORMAL_BLINK) {
-    if (millis() - ulLastBlinkTime >= BLINK_INTERVAL) {
-      ulLastBlinkTime = millis();
-      bBlinkToggle = !bBlinkToggle;
+  digitalWrite(PIN_PMM_LAMP, bPmmOn ? LAMP_ON : LAMP_OFF);
+
+  if (bPmmOn) {
+    digitalWrite(PIN_BAT_BAD_LAMP, (eCurrentBatState == STATE_BAD) ? LAMP_ON : LAMP_OFF);
+    digitalWrite(PIN_BAT_GOOD_LAMP, (eCurrentBatState == STATE_GOOD) ? LAMP_ON : LAMP_OFF);
+    
+    if (eCurrentBatState == STATE_NORMAL_SOLID) {
+      digitalWrite(PIN_BAT_NORMAL_LAMP, LAMP_ON);
+    } else if (eCurrentBatState == STATE_NORMAL_BLINK) {
+      if (millis() - ulLastBlinkTime >= BLINK_INTERVAL) {
+        ulLastBlinkTime = millis();
+        bBlinkToggle = !bBlinkToggle;
+      }
+      digitalWrite(PIN_BAT_NORMAL_LAMP, bBlinkToggle ? LAMP_ON : LAMP_OFF);
+    } else {
+      digitalWrite(PIN_BAT_NORMAL_LAMP, LAMP_OFF);
     }
-    digitalWrite(PIN_BAT_NORMAL_LAMP, bBlinkToggle ? OUTPUT_ON : OUTPUT_OFF);
-  } else {
-    digitalWrite(PIN_BAT_NORMAL_LAMP, OUTPUT_OFF);
+  }
+  else {
+    digitalWrite(PIN_BAT_BAD_LAMP, LAMP_OFF);
+    digitalWrite(PIN_BAT_GOOD_LAMP, LAMP_OFF);
+    digitalWrite(PIN_BAT_NORMAL_LAMP, LAMP_OFF);
   }
 }
