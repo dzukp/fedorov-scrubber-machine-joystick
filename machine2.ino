@@ -119,15 +119,21 @@ bool bAirOn = false;
 
 // --- Вспомогательные функции ---
 
-// Логирование
+// Логирование. Выводит метку времени (мс от запуска) перед сообщением.
 void logMsg(const char* pszMsg) {
 if (kDebugMode) {
+  Serial.print("[");
+  Serial.print(millis());
+  Serial.print(" ms] ");
   Serial.println(pszMsg);
 }
 }
 
 void logMsg(const char* pszMsg, float fVal) {
 if (kDebugMode) {
+  Serial.print("[");
+  Serial.print(millis());
+  Serial.print(" ms] ");
   Serial.print(pszMsg);
   Serial.println(fVal);
 }
@@ -181,10 +187,9 @@ bool checkButtonEdge(Button &b, const char* pszName) {
     if (bCurrentRaw != b.bLastStableState) {
       if (bCurrentRaw == HIGH) {
         bEdgeDetected = true;
-        if (kDebugMode) {
-          Serial.print("Кнопка нажата: ");
-          Serial.println(pszName);
-        }
+        char szBuf[64];
+        sprintf(szBuf, "Кнопка нажата: %s", pszName);
+        logMsg(szBuf);
       }
       b.bLastStableState = bCurrentRaw;
     }
@@ -264,19 +269,16 @@ void applyPowerOutput(bool bDesired, bool &bActual, int iRelayPin, int iLampPin)
     bActual = true;
     digitalWrite(iRelayPin, RELAY_ON);
     if (iLampPin >= 0) digitalWrite(iLampPin, LAMP_ON);
-    if (kDebugMode) {
-      Serial.print("Силовой выход включён: ");
-      Serial.println(iRelayPin);
-    }
+    char szBuf[64];
+    sprintf(szBuf, "Силовой выход включён: %d", iRelayPin);
+    logMsg(szBuf);
   } else if (!bDesired && bActual) {
     // Выключаем сразу, без задержки.
     bActual = false;
     digitalWrite(iRelayPin, RELAY_OFF);
     if (iLampPin >= 0) digitalWrite(iLampPin, LAMP_OFF);
-    if (kDebugMode) {
-      Serial.print("Силовой выход выключен: ");
-      Serial.println(iRelayPin);
-    }
+    sprintf(szBuf, "Силовой выход выключен: %d", iRelayPin);
+    logMsg(szBuf);
   }
 }
 
@@ -327,17 +329,16 @@ void loop() {
 
   updateBatteryState();
 
-  if (checkButtonEdge(btnPMM, "ПММ")) {
-    bool bChargingOrBad = (bIsCharging || eCurrentBatState == STATE_BAD);
-    if (!bPmmOn) {
-       if (!bChargingOrBad) {
-         bPmmOn = true;
-         logMsg("ПММ ВКЛ");
-       }
-    } else {
-       bPmmOn = false;
-       logMsg("ПММ ВЫКЛ");
+  // Пока идёт зарядка, ПММ принудительно выключена и кнопка включения не действует.
+  if (bIsCharging) {
+    if (bPmmOn) {
+      bPmmOn = false;
+      bAirWanted = false; bValveWanted = false; bMotorWanted = false;
+      logMsg("ПММ выключена (идёт зарядка)");
     }
+  } else if (checkButtonEdge(btnPMM, "ПММ")) {
+    bPmmOn = !bPmmOn;
+    logMsg(bPmmOn ? "ПММ ВКЛ" : "ПММ ВЫКЛ");
     if (!bPmmOn) {
       bAirWanted = false; bValveWanted = false; bMotorWanted = false;
     }
