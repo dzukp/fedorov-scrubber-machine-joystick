@@ -48,6 +48,12 @@ const float HYSTERESIS = 0.3;
 const unsigned long DEBOUNCE_DELAY = 50; 
 const unsigned long BLINK_INTERVAL = 1000;
 
+// Фиксированный период выполнения loop (мс)
+const unsigned long LOOP_PERIOD_MS = 50;
+
+// Окно усреднения напряжения АКБ методом EMA (мс)
+const unsigned long EMA_WINDOW_MS = 30000;
+
 // Все кнопки (Воздух, Клапан, Мотор щёток, ПММ) читаются через analogRead().
 // Если уровень > ANALOG_BUTTON_THRESHOLD - кнопка считается нажатой.
 const int ANALOG_BUTTON_THRESHOLD = 512;
@@ -106,6 +112,9 @@ Button btnPMM = {PIN_PMM_BUTTON, true, LOW, LOW, 0};
 unsigned long ulLastBlinkTime = 0;
 bool bBlinkToggle = false;
 
+// Таймер фиксированного периода выполнения loop
+unsigned long ulLastLoopTime = 0;
+
 // Время последнего ВКЛЮЧЕНИЯ силового выхода (для последовательного запуска,
 // чтобы не было скачка тока). Нулевое значение означает "не включалось".
 unsigned long ulLastOutputOnTime = 0;
@@ -139,9 +148,18 @@ if (kDebugMode) {
 }
 }
 
-// Чтение аналогового пина и преобразование в Вольты
-float readVoltage() {
+// Сырое чтение напряжения (без сглаживания) - для инициализации фильтра в setup()
+float readVoltageRaw() {
   return (analogRead(PIN_BATTERY_ANALOG) / 1023.0) * 30.0;
+}
+
+// Коэффициент EMA - вычисляемое значение: alpha = 2 / (N + 1), где N = окно / период
+const float fEmaAlpha = 2.0f / ((float)(EMA_WINDOW_MS / LOOP_PERIOD_MS) + 1.0f);
+
+// Чтение напряжения со сглаживанием методом EMA
+float readVoltage() {
+  fCurrentVoltage += fEmaAlpha * (readVoltageRaw() - fCurrentVoltage);
+  return fCurrentVoltage;
 }
 
 // Получение стабильного состояния для непрерывных сигналов (концевик, зарядка)
@@ -318,10 +336,19 @@ void setup() {
   digitalWrite(PIN_BAT_GOOD_LAMP, LAMP_OFF);
   digitalWrite(PIN_VALVE_LAMP, LAMP_OFF);
   digitalWrite(PIN_AIR_LAMP, LAMP_OFF);
+
+  // Инициализация EMA-фильтра напряжения первой выборкой
+  analogRead(PIN_BATTERY_ANALOG);  // холостое чтение для стабилизации АЦП
+  fCurrentVoltage = readVoltageRaw();  // первая выборка - прямая инициализация, без EMA
+
   logMsg("Система готова");
 }
 
 void loop() {
+  // Фиксированный период выполнения
+  if (millis() - ulLastLoopTime < LOOP_PERIOD_MS) return;
+  ulLastLoopTime = millis();
+
   fCurrentVoltage = readVoltage();
   // PIN_CHARGING_SIGNAL и PIN_BRUSH_LIMIT_SW активны по LOW (0 = вкл).
   bool bIsCharging = !getStableState(diInputCharging);
