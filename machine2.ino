@@ -261,6 +261,7 @@ bool canPowerOn() {
 // последнего включения другого силового выхода (не прошло MIN_STAGGER_MS).
 // iLampPin = -1 означает, что лампы-индикатора у выхода нет (клапан).
 void applyPowerOutput(bool bDesired, bool &bActual, int iRelayPin, int iLampPin) {
+  char szBuf[64];
   if (bDesired && !bActual) {
     // Желаем включить, но сейчас выключено - нужно пройти задержку запуска.
     if (!canPowerOn()) {
@@ -269,7 +270,6 @@ void applyPowerOutput(bool bDesired, bool &bActual, int iRelayPin, int iLampPin)
     bActual = true;
     digitalWrite(iRelayPin, RELAY_ON);
     if (iLampPin >= 0) digitalWrite(iLampPin, LAMP_ON);
-    char szBuf[64];
     sprintf(szBuf, "Силовой выход включён: %d", iRelayPin);
     logMsg(szBuf);
   } else if (!bDesired && bActual) {
